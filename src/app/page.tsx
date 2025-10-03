@@ -1,7 +1,12 @@
 "use client";
 
-import { useState, useEffect } from "react";
-import { subscribeUser, unsubscribeUser, sendNotification } from "./actions";
+import { useEffect, useState } from "react";
+import {
+    getSubscriptions,
+    sendNotification,
+    subscribeUser,
+    unsubscribeUser,
+} from "./actions";
 
 function urlBase64ToUint8Array(base64String: string) {
     const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
@@ -24,12 +29,21 @@ function PushNotificationManager() {
         null
     );
     const [message, setMessage] = useState("");
+    const [userId, setUserId] = useState<string>("");
 
     useEffect(() => {
         if ("serviceWorker" in navigator && "PushManager" in window) {
             setIsSupported(true);
             registerServiceWorker();
         }
+
+        // Générer ou récupérer l'ID utilisateur
+        let storedUserId = localStorage.getItem("userId");
+        if (!storedUserId) {
+            storedUserId = crypto.randomUUID();
+            localStorage.setItem("userId", storedUserId);
+        }
+        setUserId(storedUserId);
     }, []);
 
     async function registerServiceWorker() {
@@ -42,6 +56,8 @@ function PushNotificationManager() {
     }
 
     async function subscribeToPush() {
+        if (!userId) return;
+
         const registration = await navigator.serviceWorker.ready;
         const sub = await registration.pushManager.subscribe({
             userVisibleOnly: true,
@@ -50,20 +66,74 @@ function PushNotificationManager() {
             ),
         });
         setSubscription(sub);
-        const serializedSub = JSON.parse(JSON.stringify(sub));
-        await subscribeUser(serializedSub);
+
+        // Convertir la subscription au bon format
+        const subscriptionData = {
+            endpoint: sub.endpoint,
+            expirationTime: sub.expirationTime,
+            keys: {
+                p256dh: btoa(
+                    String.fromCharCode(
+                        ...new Uint8Array(sub.getKey("p256dh")!)
+                    )
+                ),
+                auth: btoa(
+                    String.fromCharCode(...new Uint8Array(sub.getKey("auth")!))
+                ),
+            },
+        };
+
+        try {
+            console.log(
+                `Subscribing user ${userId} with data:`,
+                subscriptionData
+            );
+            const result = await subscribeUser(userId, subscriptionData);
+            console.log("Subscription result:", result);
+        } catch (error) {
+            console.error("Error subscribing user:", error);
+            alert(`Error subscribing: ${error}`);
+        }
     }
 
     async function unsubscribeFromPush() {
+        if (!userId) return;
+
         await subscription?.unsubscribe();
         setSubscription(null);
-        await unsubscribeUser();
+        await unsubscribeUser(userId);
     }
 
     async function sendTestNotification() {
-        if (subscription) {
-            await sendNotification(message);
-            setMessage("");
+        if (subscription && userId && message) {
+            try {
+                console.log(`Sending notification for user: ${userId}`);
+                const result = await sendNotification(userId, message);
+                if (result.success) {
+                    console.log("Notification sent successfully");
+                } else {
+                    console.error("Failed to send notification:", result.error);
+                    alert(`Failed to send notification: ${result.error}`);
+                }
+                setMessage("");
+            } catch (error) {
+                console.error("Error sending notification:", error);
+                alert(`Error: ${error}`);
+            }
+        }
+    }
+
+    async function checkSubscriptions() {
+        try {
+            const subs = await getSubscriptions();
+            console.log("Active subscriptions:", subs);
+            alert(
+                `Active subscriptions: ${
+                    subs.count
+                }\nUser IDs: ${subs.userIds.join(", ")}`
+            );
+        } catch (error) {
+            console.error("Error checking subscriptions:", error);
         }
     }
 
@@ -71,9 +141,16 @@ function PushNotificationManager() {
         return <p>Push notifications are not supported in this browser.</p>;
     }
 
+    if (!userId) {
+        return <p>Loading...</p>;
+    }
+
     return (
         <div>
             <h3>Push Notifications</h3>
+            <p>
+                <small>User ID: {userId}</small>
+            </p>
             {subscription ? (
                 <>
                     <p>You are subscribed to push notifications.</p>
@@ -85,6 +162,9 @@ function PushNotificationManager() {
                         onChange={(e) => setMessage(e.target.value)}
                     />
                     <button onClick={sendTestNotification}>Send Test</button>
+                    <button onClick={checkSubscriptions}>
+                        Check Subscriptions
+                    </button>
                 </>
             ) : (
                 <>
