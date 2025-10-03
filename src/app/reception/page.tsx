@@ -32,6 +32,7 @@ export default function Page() {
                 <CardTitle>Se connecter à votre compte</CardTitle>
             </CardHeader>
             <CardContent>
+                <p className="p-4 bg-red-500">Bonjour comment ça va ?</p>
                 <form>
                     <div className="flex flex-col gap-6">
                         <div className="grid gap-2">

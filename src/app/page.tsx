@@ -223,7 +223,6 @@ export default function Page() {
         <div>
             <PushNotificationManager />
             <InstallPrompt />
-            <p className="p-4 bg-red-500">Bonjour comment ça va ?</p>
         </div>
     );
 }
