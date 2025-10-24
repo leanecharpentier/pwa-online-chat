@@ -220,7 +220,7 @@ function InstallPrompt() {
 
 export default function Page() {
     return (
-        <div>
+        <div className="h-full p-4">
             <PushNotificationManager />
             <InstallPrompt />
         </div>
