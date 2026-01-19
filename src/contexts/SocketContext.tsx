@@ -17,6 +17,7 @@ interface SocketContextType {
   currentRoomName: string;
   joinRoom: (roomName: string) => void;
   sendMessage: (message: string) => void;
+  sendImage: (imageData: string, imageId: string) => void;
   getMessages: (callback: (data: Message) => void) => void;
 }
 
@@ -55,7 +56,6 @@ export const SocketProvider = ({ children }: { children: React.ReactNode }) => {
           pseudo: user?.username,
           roomName,
         });
-        console.log(`${user?.username} a rejoint la salle: ${roomName}`);
       }
     },
     [socket, user?.username]
@@ -68,6 +68,20 @@ export const SocketProvider = ({ children }: { children: React.ReactNode }) => {
           content: message,
           roomName: currentRoomName,
         });
+      }
+    },
+    [socket, currentRoomName]
+  );
+
+  const sendImage = useCallback(
+    (imageData: string, _imageId: string) => {
+      if (socket && currentRoomName) {
+        const messageData = {
+          content: imageData,
+          roomName: currentRoomName,
+        };
+
+        socket.emit("chat-msg", messageData);
       }
     },
     [socket, currentRoomName]
@@ -90,9 +104,10 @@ export const SocketProvider = ({ children }: { children: React.ReactNode }) => {
       currentRoomName,
       joinRoom,
       sendMessage,
+      sendImage,
       getMessages,
     }),
-    [socket, currentRoomName, joinRoom, sendMessage, getMessages]
+    [socket, currentRoomName, joinRoom, sendMessage, sendImage, getMessages]
   );
 
   return (

@@ -6,6 +6,50 @@ interface MessageItemProps {
   currentUser: User | null;
 }
 
+// Fonction pour convertir le texte avec URLs en éléments React cliquables
+function renderTextWithLinks(text: string): React.ReactNode {
+  // Regex pour détecter les URLs (http, https, ou www.)
+  const urlRegex = /(https?:\/\/[^\s]+|www\.[^\s]+)/g;
+  const parts: React.ReactNode[] = [];
+  let lastIndex = 0;
+  let match;
+
+  while ((match = urlRegex.exec(text)) !== null) {
+    // Ajouter le texte avant l'URL
+    if (match.index > lastIndex) {
+      parts.push(text.substring(lastIndex, match.index));
+    }
+
+    // Créer le lien cliquable
+    let url = match[0];
+    if (!url.startsWith("http")) {
+      url = `https://${url}`;
+    }
+
+    parts.push(
+      <a
+        key={match.index}
+        href={url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="underline hover:opacity-80 break-all"
+      >
+        {match[0]}
+      </a>
+    );
+
+    lastIndex = match.index + match[0].length;
+  }
+
+  // Ajouter le texte restant après la dernière URL
+  if (lastIndex < text.length) {
+    parts.push(text.substring(lastIndex));
+  }
+
+  // Si aucune URL n'a été trouvée, retourner le texte original
+  return parts.length > 0 ? parts : text;
+}
+
 export function MessageItem({ message, currentUser }: MessageItemProps) {
   // Messages du serveur
   if (message.pseudo === "SERVER") {
@@ -41,7 +85,9 @@ export function MessageItem({ message, currentUser }: MessageItemProps) {
             />
           </div>
         ) : (
-          <p className="text-sm">{message.content}</p>
+          <p className="text-sm whitespace-pre-wrap">
+            {renderTextWithLinks(message.content)}
+          </p>
         )}
         <p
           className={`text-xs mt-1 ${
