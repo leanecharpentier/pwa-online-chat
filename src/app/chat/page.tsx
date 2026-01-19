@@ -1,11 +1,13 @@
 "use client";
 
+import { Modal } from "@/components/Modal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSocket } from "@/contexts/SocketContext";
+import API from "@/lib/api";
 import { formatTime } from "@/lib/utils";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 interface Message {
     id?: string;
@@ -14,6 +16,7 @@ interface Message {
     dateEmis: string;
     roomName: string;
     pseudo: string;
+    imageUrl?: string;
 }
 
 interface Room {
@@ -29,32 +32,293 @@ export default function ChatPage() {
 
     const [selectedRoomName, setSelectedRoomName] = useState<string>("");
     const [newMessage, setNewMessage] = useState<string>("");
+    const [newRoomName, setNewRoomName] = useState<string>("");
+    const [isCreateRoomModalOpen, setIsCreateRoomModalOpen] =
+        useState<boolean>(false);
+    const [isCameraOpen, setIsCameraOpen] = useState<boolean>(false);
+    const [capturedImage, setCapturedImage] = useState<string | null>(null);
+    const [cameraLoading, setCameraLoading] = useState<boolean>(false);
 
     const socket = useSocket();
     const { user } = useAuth();
+
+    const messagesEndRef = useRef<HTMLDivElement>(null);
+    const videoRef = useRef<HTMLVideoElement>(null);
+    const canvasRef = useRef<HTMLCanvasElement>(null);
+
+    const scrollToBottom = () => {
+        messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    };
+
+    const startCamera = () => {
+        setIsCameraOpen(true);
+    };
+
+    // Initialiser la caméra quand la modal s'ouvre
+    useEffect(() => {
+        if (!isCameraOpen) {
+            // Nettoyer si la modal se ferme
+            if (videoRef.current?.srcObject) {
+                const stream = videoRef.current.srcObject as MediaStream;
+                stream.getTracks().forEach(track => track.stop());
+                videoRef.current.srcObject = null;
+            }
+            return;
+        }
+
+        let stream: MediaStream | null = null;
+        let cancelled = false;
+
+        const initCamera = async () => {
+            setCameraLoading(true);
+            try {
+                console.log("Demande d'accès à la caméra...");
+                console.log("videoRef.current:", videoRef.current);
+                
+                // Attendre que l'élément vidéo soit monté (jusqu'à 2 secondes)
+                let attempts = 0;
+                while (!videoRef.current && attempts < 20) {
+                    await new Promise(resolve => setTimeout(resolve, 100));
+                    attempts++;
+                    console.log(`Tentative ${attempts}/20 - videoRef.current:`, videoRef.current);
+                }
+                
+                if (!videoRef.current) {
+                    console.error("Élément vidéo non trouvé après 20 tentatives");
+                    throw new Error("Élément vidéo non disponible");
+                }
+                
+                console.log("Élément vidéo trouvé, demande d'accès à la caméra...");
+                stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { 
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 }
+                    } 
+                });
+                
+                if (cancelled) {
+                    console.log("Initialisation annulée");
+                    stream.getTracks().forEach(track => track.stop());
+                    return;
+                }
+                
+                console.log("Stream obtenu:", stream);
+                console.log("Tracks actifs:", stream.getTracks().length);
+                
+                // Assigner le stream à l'élément vidéo
+                const videoEl = videoRef.current;
+                if (videoEl && !cancelled) {
+                    videoEl.srcObject = stream;
+                    console.log("Stream assigné à l'élément vidéo");
+                    
+                    // Forcer la lecture
+                    try {
+                        await videoEl.play();
+                        console.log("Vidéo en cours de lecture");
+                    } catch (playError) {
+                        console.error("Erreur lors de la lecture:", playError);
+                    }
+                } else {
+                    console.error("Élément vidéo non disponible ou annulé");
+                    stream.getTracks().forEach(track => track.stop());
+                }
+            } catch (error) {
+                if (cancelled) {
+                    console.log("Erreur ignorée car annulée");
+                    return;
+                }
+                
+                console.error("Erreur d'accès à la caméra:", error);
+                const errorMessage = error instanceof Error ? error.message : "Erreur inconnue";
+                alert(`Impossible d'accéder à la caméra: ${errorMessage}`);
+                setIsCameraOpen(false);
+                setCameraLoading(false);
+            }
+        };
+
+        // Démarrer l'initialisation après un délai pour laisser le DOM se mettre à jour
+        const timeoutId = setTimeout(() => {
+            console.log("Démarrage de l'initialisation de la caméra");
+            initCamera();
+        }, 200);
+
+        // Nettoyage au démontage
+        return () => {
+            cancelled = true;
+            clearTimeout(timeoutId);
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+            }
+            if (videoRef.current?.srcObject) {
+                const currentStream = videoRef.current.srcObject as MediaStream;
+                currentStream.getTracks().forEach(track => track.stop());
+                videoRef.current.srcObject = null;
+            }
+        };
+    }, [isCameraOpen]);
+
+    const stopCamera = () => {
+        if (videoRef.current?.srcObject) {
+            const stream = videoRef.current.srcObject as MediaStream;
+            stream.getTracks().forEach(track => track.stop());
+            videoRef.current.srcObject = null;
+        }
+        setIsCameraOpen(false);
+        setCapturedImage(null);
+    };
+
+    const capturePhoto = () => {
+        if (videoRef.current && canvasRef.current) {
+            const video = videoRef.current;
+            const canvas = canvasRef.current;
+            const context = canvas.getContext('2d');
+            
+            // Vérifier que la vidéo est prête
+            if (video.readyState < 2) {
+                console.warn("La vidéo n'est pas encore prête, readyState:", video.readyState);
+                alert("Veuillez attendre que la vidéo soit prête");
+                return;
+            }
+            
+            canvas.width = video.videoWidth;
+            canvas.height = video.videoHeight;
+            
+            if (context) {
+                // S'assurer que le canvas a un fond blanc
+                context.fillStyle = '#FFFFFF';
+                context.fillRect(0, 0, canvas.width, canvas.height);
+                
+                // Dessiner l'image de la vidéo
+                context.drawImage(video, 0, 0, canvas.width, canvas.height);
+                
+                // Vérifier que l'image n'est pas vide/noire
+                const imageData = context.getImageData(0, 0, canvas.width, canvas.height);
+                const data = imageData.data;
+                let hasContent = false;
+                
+                // Vérifier quelques pixels pour voir s'il y a du contenu
+                for (let i = 0; i < data.length; i += 16) {
+                    const r = data[i];
+                    const g = data[i + 1];
+                    const b = data[i + 2];
+                    // Si ce n'est pas noir ou blanc pur, il y a du contenu
+                    if (!(r === 0 && g === 0 && b === 0) && !(r === 255 && g === 255 && b === 255)) {
+                        hasContent = true;
+                        break;
+                    }
+                }
+                
+                if (!hasContent) {
+                    console.warn("L'image capturée semble être vide ou noire");
+                }
+                
+                const imageDataUrl = canvas.toDataURL('image/jpeg', 0.8);
+                console.log("Photo capturée - Dimensions:", canvas.width, "x", canvas.height);
+                console.log("Photo capturée - Taille data URL:", imageDataUrl.length, "caractères");
+                setCapturedImage(imageDataUrl);
+            }
+        }
+    };
+
+    const sendPhoto = () => {
+        if (capturedImage) {
+            // Vérifier que l'image est valide
+            if (!capturedImage.startsWith('data:image')) {
+                console.error("Format d'image invalide:", capturedImage.substring(0, 50));
+                alert("Erreur: format d'image invalide");
+                return;
+            }
+            
+            console.log("Sauvegarde de la photo - Taille:", capturedImage.length, "caractères");
+            console.log("Début de l'image:", capturedImage.substring(0, 100));
+            
+            // Sauvegarder la photo dans localStorage
+            const photoData = {
+                id: Date.now().toString(),
+                imageUrl: capturedImage,
+                dateEmis: new Date().toISOString(),
+                roomName: selectedRoomName,
+                pseudo: user?.username || "Utilisateur",
+            };
+            
+            // Récupérer les photos existantes
+            const savedPhotos = localStorage.getItem("galleryPhotos");
+            const photos = savedPhotos ? JSON.parse(savedPhotos) : [];
+            
+            // Ajouter la nouvelle photo
+            photos.push(photoData);
+            
+            // Sauvegarder dans localStorage
+            try {
+                localStorage.setItem("galleryPhotos", JSON.stringify(photos));
+                console.log("Photo sauvegardée avec succès. Total photos:", photos.length);
+                
+                // Déclencher un événement personnalisé pour rafraîchir la gallery
+                window.dispatchEvent(new Event("galleryUpdated"));
+                
+                // Vérifier que la sauvegarde a fonctionné
+                const verification = localStorage.getItem("galleryPhotos");
+                if (verification) {
+                    const verified = JSON.parse(verification);
+                    const lastPhoto = verified[verified.length - 1];
+                    console.log("Vérification - Dernière photo sauvegardée:", {
+                        id: lastPhoto.id,
+                        imageUrlLength: lastPhoto.imageUrl?.length,
+                        imageUrlStart: lastPhoto.imageUrl?.substring(0, 50)
+                    });
+                }
+            } catch (error) {
+                console.error("Erreur lors de la sauvegarde:", error);
+                if (error instanceof Error && error.name === 'QuotaExceededError') {
+                    alert("Erreur: L'espace de stockage est plein. Veuillez supprimer des photos.");
+                } else {
+                    alert("Erreur lors de la sauvegarde de la photo");
+                }
+                return;
+            }
+            
+            // Créer un message avec l'image (simulation)
+            const photoMessage: Message = {
+                content: "Photo partagée",
+                categorie: "image",
+                dateEmis: new Date().toISOString(),
+                roomName: selectedRoomName,
+                pseudo: user?.username || "Utilisateur",
+                imageUrl: capturedImage
+            };
+            
+            // Ajouter directement le message à l'état (simulation)
+            setMessages((prevMessages) => [...prevMessages, photoMessage]);
+            
+            // Dans une vraie app, vous feriez : socket.sendMessage avec l'URL de l'image
+            const simpleMessage = `📸 ${user?.username || "Utilisateur"} a partagé une photo`;
+            socket.sendMessage(simpleMessage);
+            
+            // Réinitialiser la caméra
+            stopCamera();
+            console.log("Photo envoyée et sauvegardée:", capturedImage.substring(0, 50) + "...");
+        }
+    };
+
+    const retakePhoto = () => {
+        setCapturedImage(null);
+    };
+
+    useEffect(() => {
+        scrollToBottom();
+    }, [messages]);
 
     const fetchRooms = async () => {
         setLoading(true);
         setError(null);
 
         try {
-            const response = await fetch(
-                "https://api.tools.gavago.fr/socketio/api/rooms"
-            );
-
-            if (!response.ok) {
-                throw new Error(`Erreur HTTP: ${response.status}`);
-            }
-
-            const data = await response.json();
-
+            const data = await API.getRooms();
             const rooms: Room[] = Object.keys(data.data).map((room, index) => ({
                 name: room,
                 avatar: ["💬", "👥", "🔧", "📝", "🎯"][index % 5],
             }));
-
             setRooms(rooms);
-
             if (rooms.length > 0) {
                 setSelectedRoomName(rooms[0].name);
             }
@@ -119,6 +383,19 @@ export default function ChatPage() {
         }
     };
 
+    const handleCreateRoom = async (
+        event: React.FormEvent<HTMLFormElement>
+    ) => {
+        event.preventDefault();
+        if (newRoomName.trim()) {
+            socket.joinRoom(newRoomName.trim());
+            setNewRoomName("");
+            await fetchRooms();
+            setSelectedRoomName(newRoomName.trim());
+            setIsCreateRoomModalOpen(false);
+        }
+    };
+
     return (
         <div className="flex h-full bg-gray-50">
             <aside className="w-80 bg-white border-r border-gray-200 flex flex-col">
@@ -127,14 +404,43 @@ export default function ChatPage() {
                         <h2 className="text-xl font-semibold text-gray-800">
                             Conversations
                         </h2>
-                        <Button
-                            onClick={fetchRooms}
-                            disabled={loading}
-                            variant="outline"
-                            size="sm"
-                        >
-                            {loading ? "..." : "🔄"}
-                        </Button>
+                        <Modal
+                            trigger={
+                                <Button
+                                    variant="outline"
+                                    size="sm"
+                                    onClick={() =>
+                                        setIsCreateRoomModalOpen(true)
+                                    }
+                                >
+                                    +
+                                </Button>
+                            }
+                            title="Créer une nouvelle conversation"
+                            content={
+                                <form onSubmit={handleCreateRoom}>
+                                    <input
+                                        type="text"
+                                        value={newRoomName}
+                                        onChange={(e) =>
+                                            setNewRoomName(e.target.value)
+                                        }
+                                        placeholder="Nom de la conversation"
+                                        className="border border-gray-300 rounded p-2 w-full"
+                                        required
+                                    />
+                                    <Button
+                                        type="submit"
+                                        className="mt-2"
+                                        disabled={!newRoomName.trim()}
+                                    >
+                                        Créer
+                                    </Button>
+                                </form>
+                            }
+                            isOpen={isCreateRoomModalOpen}
+                            onOpenChange={setIsCreateRoomModalOpen}
+                        />
                     </div>
                     {error && (
                         <div className="mt-2 p-2 bg-red-100 border border-red-300 rounded text-red-700 text-sm">
@@ -271,9 +577,19 @@ export default function ChatPage() {
                                                     {message.pseudo}
                                                 </p>
                                             )}
-                                            <p className="text-sm">
-                                                {message.content}
-                                            </p>
+                                            {message.imageUrl ? (
+                                                <div className="mt-1">
+                                                    <img
+                                                        src={message.imageUrl}
+                                                        alt="Contenu visuel"
+                                                        className="max-w-xs rounded-lg"
+                                                    />
+                                                </div>
+                                            ) : (
+                                                <p className="text-sm">
+                                                    {message.content}
+                                                </p>
+                                            )}
                                             <p
                                                 className={`text-xs mt-1 ${
                                                     message.pseudo ===
@@ -288,6 +604,8 @@ export default function ChatPage() {
                                     </div>
                                 );
                             })}
+                            {/* Élément invisible pour l'auto-scroll */}
+                            <div ref={messagesEndRef} />
                         </div>
 
                         <div className="bg-white border-t border-gray-200 p-4">
@@ -306,6 +624,37 @@ export default function ChatPage() {
                                     className="flex-1"
                                 />
                                 <Button
+                                    onClick={startCamera}
+                                    variant="outline"
+                                    size="icon"
+                                    title="Prendre une photo"
+                                >
+                                    <svg
+                                        width="20"
+                                        height="20"
+                                        viewBox="0 0 24 24"
+                                        fill="none"
+                                        xmlns="http://www.w3.org/2000/svg"
+                                    >
+                                        <path
+                                            d="M9 3H15L17 5H21C21.5304 5 22.0391 5.21071 22.4142 5.58579C22.7893 5.96086 23 6.46957 23 7V19C23 19.5304 22.7893 20.0391 22.4142 20.4142C22.0391 20.7893 21.5304 21 21 21H3C2.46957 21 1.96086 20.7893 1.58579 20.4142C1.21071 20.0391 1 19.5304 1 19V7C1 6.46957 1.21071 5.96086 1.58579 5.58579C1.96086 5.21071 2.46957 5 3 5H7L9 3Z"
+                                            stroke="currentColor"
+                                            strokeWidth="2"
+                                            strokeLinecap="round"
+                                            strokeLinejoin="round"
+                                        />
+                                        <circle
+                                            cx="12"
+                                            cy="13"
+                                            r="4"
+                                            stroke="currentColor"
+                                            strokeWidth="2"
+                                            strokeLinecap="round"
+                                            strokeLinejoin="round"
+                                        />
+                                    </svg>
+                                </Button>
+                                <Button
                                     onClick={handleSendMessage}
                                     disabled={!newMessage.trim()}
                                 >
@@ -319,6 +668,111 @@ export default function ChatPage() {
                         <p className="text-gray-500">
                             Sélectionnez une conversation pour commencer
                         </p>
+                    </div>
+                )}
+
+                {/* Interface de la caméra */}
+                {isCameraOpen && (
+                    <div className="fixed inset-0 bg-opacity-75 flex items-center justify-center z-50">
+                        <div className="bg-gray-900 rounded-lg p-4 max-w-md w-full mx-4">
+                            <div className="text-center">
+                                <h3 className="text-lg font-semibold mb-4">
+                                    {(() => {
+                                        if (capturedImage) return "Photo capturée";
+                                        if (cameraLoading) return "Initialisation de la caméra...";
+                                        return "Prendre une photo";
+                                    })()}
+                                </h3>
+                                
+                                {!capturedImage && (
+                                    <div className="relative">
+                                        {cameraLoading && (
+                                            <div className="absolute inset-0 flex items-center justify-center bg-gray-900 rounded-lg z-10">
+                                                <div className="text-center">
+                                                    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500 mx-auto"></div>
+                                                    <span className="ml-2 text-white">Chargement de la caméra...</span>
+                                                </div>
+                                            </div>
+                                        )}
+                                        <video
+                                            ref={videoRef}
+                                            autoPlay
+                                            playsInline
+                                            muted
+                                            className="w-full rounded-lg bg-gray-100"
+                                            style={{ minHeight: '200px' }}
+                                            onLoadedMetadata={() => {
+                                                console.log("Métadonnées vidéo chargées");
+                                                setCameraLoading(false);
+                                            }}
+                                            onCanPlay={() => {
+                                                console.log("Vidéo prête à jouer");
+                                                setCameraLoading(false);
+                                            }}
+                                            onPlaying={() => {
+                                                console.log("Vidéo en cours de lecture");
+                                                setCameraLoading(false);
+                                            }}
+                                            onError={(e) => {
+                                                console.error("Erreur vidéo:", e);
+                                                setCameraLoading(false);
+                                                alert("Erreur lors du chargement de la vidéo");
+                                            }}
+                                        />
+                                        <canvas
+                                            ref={canvasRef}
+                                            className="hidden"
+                                        />
+                                        <div className="flex justify-center space-x-2 mt-4">
+                                            <Button
+                                                onClick={capturePhoto}
+                                                className="bg-blue-500 hover:bg-blue-600"
+                                            >
+                                                📸 Capturer
+                                            </Button>
+                                            <Button
+                                                onClick={stopCamera}
+                                                variant="outline"
+                                            >
+                                                Annuler
+                                            </Button>
+                                        </div>
+                                    </div>
+                                )}
+                                
+                                {capturedImage && (
+                                    <div>
+                                        <div className="relative">
+                                            <img
+                                                src={capturedImage}
+                                                alt="Aperçu"
+                                                className="w-full rounded-lg"
+                                            />
+                                        </div>
+                                        <div className="flex justify-center space-x-2 mt-4">
+                                            <Button
+                                                onClick={sendPhoto}
+                                                className="bg-green-500 hover:bg-green-600"
+                                            >
+                                                📤 Envoyer
+                                            </Button>
+                                            <Button
+                                                onClick={retakePhoto}
+                                                variant="outline"
+                                            >
+                                                🔄 Reprendre
+                                            </Button>
+                                            <Button
+                                                onClick={stopCamera}
+                                                variant="outline"
+                                            >
+                                                Annuler
+                                            </Button>
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
                     </div>
                 )}
             </main>
