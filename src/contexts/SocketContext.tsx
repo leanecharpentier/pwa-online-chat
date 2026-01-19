@@ -1,5 +1,6 @@
 "use client";
 
+import type { Message } from "@/types";
 import {
   createContext,
   useCallback,
@@ -10,14 +11,6 @@ import {
 } from "react";
 import { io, Socket } from "socket.io-client";
 import { useAuth } from "./AuthContext";
-
-interface Message {
-  content: string;
-  categorie: string;
-  dateEmis: string;
-  roomName: string;
-  pseudo: string;
-}
 
 interface SocketContextType {
   socket: Socket | null;
