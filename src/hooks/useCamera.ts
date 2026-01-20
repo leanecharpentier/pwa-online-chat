@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState } from "react";
+import { logger } from "@/lib/logger";
+import { showError } from "@/lib/errors";
 
 export function useCamera(isOpen: boolean) {
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
@@ -56,7 +58,7 @@ export function useCamera(isOpen: boolean) {
           try {
             await videoEl.play();
           } catch (playError) {
-            console.error("Erreur lors de la lecture:", playError);
+            logger.error("Erreur lors de la lecture:", playError);
           }
         } else {
           stream.getTracks().forEach((track) => track.stop());
@@ -66,10 +68,10 @@ export function useCamera(isOpen: boolean) {
           return;
         }
 
-        console.error("Erreur d'accès à la caméra:", error);
+        logger.error("Erreur d'accès à la caméra:", error);
         const errorMessage =
           error instanceof Error ? error.message : "Erreur inconnue";
-        alert(`Impossible d'accéder à la caméra: ${errorMessage}`);
+        showError("CAMERA_ACCESS_ERROR", `Impossible d'accéder à la caméra: ${errorMessage}`);
         setCameraLoading(false);
       }
     };
@@ -152,7 +154,7 @@ export function useCamera(isOpen: boolean) {
         }
 
         if (!hasContent) {
-          console.warn("L'image capturée semble être vide ou noire");
+          logger.warn("L'image capturée semble être vide ou noire");
         }
 
         const imageDataUrl = canvas.toDataURL("image/jpeg", 0.8);

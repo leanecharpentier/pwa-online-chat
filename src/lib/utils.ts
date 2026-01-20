@@ -1,5 +1,6 @@
 import { clsx, type ClassValue } from "clsx";
 import { twMerge } from "tailwind-merge";
+import { logger } from "./logger";
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -53,7 +54,7 @@ export function formatTime(dateString: string): string {
       });
     }
   } catch (error) {
-    console.error("Erreur lors du formatage de la date:", error);
+    logger.error("Erreur lors du formatage de la date:", error);
     return "Date invalide";
   }
 }

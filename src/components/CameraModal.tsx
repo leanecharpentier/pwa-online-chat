@@ -2,6 +2,8 @@
 
 import { Button } from "@/components/ui/button";
 import { useCamera } from "@/hooks/useCamera";
+import { logger } from "@/lib/logger";
+import { showError } from "@/lib/errors";
 
 interface CameraModalProps {
   isOpen: boolean;
@@ -84,9 +86,9 @@ export function CameraModal({
                   setCameraLoading(false);
                 }}
                 onError={(e) => {
-                  console.error("Erreur vidéo:", e);
+                  logger.error("Erreur vidéo:", e);
                   setCameraLoading(false);
-                  alert("Erreur lors du chargement de la vidéo");
+                  showError("VIDEO_LOAD_ERROR");
                 }}
               />
               <canvas ref={canvasRef} className="hidden" />

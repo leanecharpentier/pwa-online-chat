@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import API from "@/lib/api";
+import { logger } from "@/lib/logger";
 import type { Room } from "@/types";
 
 export function useRooms() {
@@ -19,7 +20,7 @@ export function useRooms() {
       }));
       setRooms(roomsData);
     } catch (err) {
-      console.error("Erreur lors de la récupération des rooms:", err);
+      logger.error("Erreur lors de la récupération des rooms:", err);
       setError(err instanceof Error ? err.message : "Erreur inconnue");
     } finally {
       setLoading(false);

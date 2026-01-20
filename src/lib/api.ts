@@ -1,27 +1,23 @@
+import { extractBase64FromDataUrl } from "./imageUtils";
+
 const API_URI = "https://api.tools.gavago.fr/socketio/api";
 
-async function getRooms() {
+interface RoomsResponse {
+  data: Record<string, unknown>;
+}
+
+async function getRooms(): Promise<RoomsResponse> {
   const response = await fetch(`${API_URI}/rooms`);
 
   if (!response.ok) {
     throw new Error(`Erreur HTTP: ${response.status}`);
   }
 
-  const data = await response.json();
-
-  return data;
+  return response.json();
 }
 
-async function postImage(imageDataUrl: string, socketId: string) {
-  // Extraire les données base64 du data URL
-  // Format: "data:image/jpeg;base64,/9j/4AAQ..."
-  const base64Data = imageDataUrl.split(",")[1];
-
-  if (!base64Data) {
-    throw new Error(
-      "Format d'image invalide: impossible d'extraire les données base64"
-    );
-  }
+async function postImage(imageDataUrl: string, socketId: string): Promise<unknown> {
+  const base64Data = extractBase64FromDataUrl(imageDataUrl);
 
   const apiResponse = await fetch(`${API_URI}/images/`, {
     method: "POST",
@@ -49,21 +45,19 @@ async function getImage(imageId: string) {
     throw new Error(`Erreur HTTP: ${response.status}`);
   }
 
-  // L'API peut retourner soit une image directement, soit un JSON avec l'URL
   const contentType = response.headers.get("content-type");
   if (contentType?.includes("application/json")) {
-    const data = await response.json();
-    return data;
-  } else {
-    // Si c'est une image, on la convertit en data URL
-    const blob = await response.blob();
-    return new Promise<string>((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onloadend = () => resolve(reader.result as string);
-      reader.onerror = reject;
-      reader.readAsDataURL(blob);
-    });
+    return response.json();
   }
+
+  // Si c'est une image, on la convertit en data URL
+  const blob = await response.blob();
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(blob);
+  });
 }
 
 const API = {

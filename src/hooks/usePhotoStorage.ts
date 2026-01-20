@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { deletePhoto, loadPhotos, savePhoto } from "@/lib/photoStorage";
+import { logger } from "@/lib/logger";
 import type { PhotoData } from "@/types";
 
 export function usePhotoStorage() {
@@ -18,7 +19,7 @@ export function usePhotoStorage() {
       savePhoto(photo);
       load();
     } catch (error) {
-      console.error("Erreur lors de la sauvegarde:", error);
+      logger.error("Erreur lors de la sauvegarde:", error);
       if (error instanceof Error && error.name === "QuotaExceededError") {
         throw new Error(
           "Erreur: L'espace de stockage est plein. Veuillez supprimer des photos."

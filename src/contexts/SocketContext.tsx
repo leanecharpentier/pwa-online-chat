@@ -11,6 +11,7 @@ import {
 } from "react";
 import { io, Socket } from "socket.io-client";
 import { useAuth } from "./AuthContext";
+import { logger } from "@/lib/logger";
 
 interface SocketContextType {
   socket: Socket | null;
@@ -35,11 +36,11 @@ export const SocketProvider = ({ children }: { children: React.ReactNode }) => {
     });
 
     newSocket.on("connect", () => {
-      console.log("Connecté au serveur Socket.io");
+      logger.info("Connecté au serveur Socket.io");
     });
 
     newSocket.on("disconnect", () => {
-      console.log("Déconnecté du serveur Socket.io");
+      logger.info("Déconnecté du serveur Socket.io");
     });
 
     setSocket(newSocket);
