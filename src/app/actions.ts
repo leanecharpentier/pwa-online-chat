@@ -38,7 +38,7 @@ export async function subscribeUser(
       p256dh: string;
       auth: string;
     };
-  }
+  },
 ) {
   if (!initializeVapid()) {
     return { success: false, error: "VAPID not configured" };
@@ -74,7 +74,7 @@ export async function sendNotification(userId: string, message: string) {
     return {
       success: false,
       error: `No subscription available for user ${userId}. Available users: [${Array.from(
-        subscriptions.keys()
+        subscriptions.keys(),
       ).join(", ")}]`,
     };
   }
@@ -86,7 +86,7 @@ export async function sendNotification(userId: string, message: string) {
         title: "Test Notification",
         body: message,
         icon: "/next.svg",
-      })
+      }),
     );
     return { success: true };
   } catch (error) {
@@ -112,7 +112,7 @@ export async function sendNotificationToAll(message: string) {
           title: "Chat Notification",
           body: message,
           icon: "/next.svg",
-        })
+        }),
       );
       results.push({ userId, success: true });
     } catch (error) {

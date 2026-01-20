@@ -71,7 +71,10 @@ export function useCamera(isOpen: boolean) {
         logger.error("Erreur d'accès à la caméra:", error);
         const errorMessage =
           error instanceof Error ? error.message : "Erreur inconnue";
-        showError("CAMERA_ACCESS_ERROR", `Impossible d'accéder à la caméra: ${errorMessage}`);
+        showError(
+          "CAMERA_ACCESS_ERROR",
+          `Impossible d'accéder à la caméra: ${errorMessage}`,
+        );
         setCameraLoading(false);
       }
     };
@@ -133,7 +136,7 @@ export function useCamera(isOpen: boolean) {
           0,
           0,
           canvas.width,
-          canvas.height
+          canvas.height,
         );
         const data = imageData.data;
         let hasContent = false;

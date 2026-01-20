@@ -16,7 +16,10 @@ async function getRooms(): Promise<RoomsResponse> {
   return response.json();
 }
 
-async function postImage(imageDataUrl: string, socketId: string): Promise<unknown> {
+async function postImage(
+  imageDataUrl: string,
+  socketId: string,
+): Promise<unknown> {
   const base64Data = extractBase64FromDataUrl(imageDataUrl);
 
   const apiResponse = await fetch(`${API_URI}/images/`, {

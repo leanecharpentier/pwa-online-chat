@@ -1,7 +1,12 @@
 "use client";
 
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { usePhotoStorage } from "@/hooks/usePhotoStorage";
 import type { PhotoData } from "@/types";
 import { useEffect, useState } from "react";
@@ -52,9 +57,11 @@ export function GallerySelector({
             <div className="flex items-center justify-center py-8">
               <div className="text-center">
                 <div className="text-6xl mb-4">📷</div>
-                <p className="text-gray-500 text-lg">Aucune photo dans la galerie</p>
+                <p className="text-gray-500 text-lg">
+                  Aucune photo dans la galerie
+                </p>
                 <p className="text-gray-400 text-sm mt-2">
-                  Prenez une photo pour qu'elle apparaisse ici
+                  Prenez une photo pour qu&apos;elle apparaisse ici
                 </p>
               </div>
             </div>

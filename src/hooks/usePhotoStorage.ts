@@ -22,7 +22,7 @@ export function usePhotoStorage() {
       logger.error("Erreur lors de la sauvegarde:", error);
       if (error instanceof Error && error.name === "QuotaExceededError") {
         throw new Error(
-          "Erreur: L'espace de stockage est plein. Veuillez supprimer des photos."
+          "Erreur: L'espace de stockage est plein. Veuillez supprimer des photos.",
         );
       }
       throw new Error("Erreur lors de la sauvegarde de la photo");

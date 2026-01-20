@@ -31,7 +31,7 @@ export function loadPhotos(): PhotoData[] {
     // Trier par date (plus récentes en premier)
     return validPhotos.sort(
       (a: PhotoData, b: PhotoData) =>
-        new Date(b.dateEmis).getTime() - new Date(a.dateEmis).getTime()
+        new Date(b.dateEmis).getTime() - new Date(a.dateEmis).getTime(),
     );
   } catch (error) {
     logger.error("Erreur lors du chargement des photos:", error);

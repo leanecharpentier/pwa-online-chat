@@ -38,7 +38,12 @@ export function RoomList({
         <div className="p-2 bg-red-100 border border-red-300 rounded text-red-700 text-sm">
           <div className="flex items-center justify-between">
             <span>Erreur: {error}</span>
-            <Button onClick={onRetry} variant="outline" size="sm" className="ml-2">
+            <Button
+              onClick={onRetry}
+              variant="outline"
+              size="sm"
+              className="ml-2"
+            >
               Réessayer
             </Button>
           </div>

@@ -25,10 +25,7 @@ export function useOffline() {
       const stored = globalThis.localStorage.getItem(PENDING_MESSAGES_KEY);
       return stored ? JSON.parse(stored) : [];
     } catch (error) {
-      logger.error(
-        "Erreur lors de la lecture des messages en attente:",
-        error,
-      );
+      logger.error("Erreur lors de la lecture des messages en attente:", error);
       return [];
     }
   }, []);

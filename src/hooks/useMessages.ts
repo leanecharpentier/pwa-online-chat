@@ -3,16 +3,25 @@ import { useCallback, useEffect, useState } from "react";
 import { useSocket } from "@/contexts/SocketContext";
 import { useOffline } from "./useOffline";
 import { logger } from "@/lib/logger";
-import { normalizeImageContent } from "@/lib/imageUtils";
+import {
+  normalizeImageContent,
+  isImageContent,
+  extractBase64FromDataUrl,
+} from "@/lib/imageUtils";
+import { useAuth } from "@/contexts/AuthContext";
 
 interface UseMessagesOptions {
   selectedRoomName: string;
   isOnline: boolean;
 }
 
-export function useMessages({ selectedRoomName, isOnline }: UseMessagesOptions) {
+export function useMessages({
+  selectedRoomName,
+  isOnline,
+}: UseMessagesOptions) {
   const [messages, setMessages] = useState<Message[]>([]);
   const socket = useSocket();
+  const { user } = useAuth();
   const {
     getPendingMessages,
     addPendingMessage,
@@ -91,7 +100,10 @@ export function useMessages({ selectedRoomName, isOnline }: UseMessagesOptions) 
                 ),
               );
             } catch (error) {
-              logger.error("Erreur lors de l'envoi du message en attente:", error);
+              logger.error(
+                "Erreur lors de l'envoi du message en attente:",
+                error,
+              );
             }
           }
         }
@@ -117,7 +129,11 @@ export function useMessages({ selectedRoomName, isOnline }: UseMessagesOptions) 
       }
 
       // Traitement des images
-      if (data.categorie === "NEW_IMAGE" && data.content) {
+      // Vérifier si le contenu est une image (data URL, base64, ou URL) même si la catégorie n'est pas NEW_IMAGE
+      if (
+        data.content &&
+        (data.categorie === "NEW_IMAGE" || isImageContent(data.content))
+      ) {
         data.imageUrl = normalizeImageContent(data.content);
 
         if (data.userId && !data.pseudo) {
@@ -127,31 +143,103 @@ export function useMessages({ selectedRoomName, isOnline }: UseMessagesOptions) 
 
       setMessages((prevMessages) => {
         // Vérifier si c'est un message qui correspond à un message en attente
-        const matchingPending = prevMessages.find(
-          (msg) =>
-            msg.isPending &&
-            msg.tempId &&
-            msg.content === data.content &&
-            msg.roomName === data.roomName &&
-            Math.abs(
+        // Pour les images, on compare aussi par imageUrl car le contenu peut être différent (base64 vs data URL)
+        const isImageMessage =
+          data.categorie === "NEW_IMAGE" || isImageContent(data.content || "");
+        const isOwnMessage =
+          data.pseudo === user?.username || data.userId === socket.socket?.id;
+
+        const matchingPending = prevMessages.find((msg) => {
+          if (!msg.isPending || !msg.tempId) return false;
+          if (msg.roomName !== data.roomName) return false;
+
+          // Pour les messages d'images, comparer par imageUrl si disponible
+          if (isImageMessage && msg.imageUrl && data.imageUrl) {
+            // Normaliser les deux URLs pour comparer (extraire le base64 si nécessaire)
+            try {
+              const msgBase64 = msg.imageUrl.startsWith("data:image")
+                ? extractBase64FromDataUrl(msg.imageUrl)
+                : msg.imageUrl;
+              const dataBase64 = data.imageUrl.startsWith("data:image")
+                ? extractBase64FromDataUrl(data.imageUrl)
+                : data.imageUrl;
+              // Comparer les premiers caractères du base64 (plus rapide que toute la chaîne)
+              if (
+                msgBase64.substring(0, 100) === dataBase64.substring(0, 100)
+              ) {
+                return true;
+              }
+            } catch {
+              // Si l'extraction échoue, continuer avec les autres méthodes
+            }
+          }
+
+          // Comparer par contenu (pour les messages texte ou si imageUrl n'est pas disponible)
+          if (msg.content === data.content) {
+            return true;
+          }
+
+          // Pour les messages d'images de l'utilisateur, comparer par date et pseudo/userId
+          if (isImageMessage && isOwnMessage) {
+            const timeDiff = Math.abs(
               new Date(msg.dateEmis).getTime() -
                 new Date(data.dateEmis).getTime(),
-            ) < 5000,
-        );
+            );
+            if (timeDiff < 5000) {
+              return true;
+            }
+          }
 
-        if (matchingPending) {
+          return false;
+        });
+
+        if (matchingPending && matchingPending.tempId) {
           const updated = prevMessages.map((msg) =>
             msg.tempId === matchingPending.tempId
               ? { ...data, isPending: false }
               : msg,
           );
-          removePendingMessage(matchingPending.tempId!);
+          // Supprimer du localStorage si c'était un message en attente sauvegardé
+          if (matchingPending.tempId.startsWith("pending-")) {
+            removePendingMessage(matchingPending.tempId);
+          }
           return updated;
         }
 
+        // Vérifier les doublons (pour éviter d'ajouter le même message deux fois)
         if (isMessageDuplicate(data, prevMessages)) {
           return prevMessages;
         }
+
+        // Pour les messages d'images de l'utilisateur, vérifier s'il y a déjà un message similaire
+        if (isImageMessage && isOwnMessage) {
+          const similarMessage = prevMessages.find((msg) => {
+            if (msg.roomName !== data.roomName) return false;
+            if (msg.imageUrl && data.imageUrl) {
+              try {
+                const msgBase64 = msg.imageUrl.startsWith("data:image")
+                  ? extractBase64FromDataUrl(msg.imageUrl)
+                  : msg.imageUrl;
+                const dataBase64 = data.imageUrl.startsWith("data:image")
+                  ? extractBase64FromDataUrl(data.imageUrl)
+                  : data.imageUrl;
+                if (
+                  msgBase64.substring(0, 100) === dataBase64.substring(0, 100)
+                ) {
+                  return true;
+                }
+              } catch {
+                // Ignorer les erreurs d'extraction
+              }
+            }
+            return false;
+          });
+
+          if (similarMessage) {
+            return prevMessages;
+          }
+        }
+
         return [...prevMessages, data];
       });
     };
@@ -174,4 +262,3 @@ export function useMessages({ selectedRoomName, isOnline }: UseMessagesOptions) 
     setMessages,
   };
 }
-

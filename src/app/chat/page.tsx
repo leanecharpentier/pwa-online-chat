@@ -6,6 +6,7 @@ import { GallerySelector } from "@/components/chat/GallerySelector";
 import { MessageInput } from "@/components/chat/MessageInput";
 import { MessageList } from "@/components/chat/MessageList";
 import { RoomList } from "@/components/chat/RoomList";
+import ProtectedRoute from "@/components/ProtectedRoute";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSocket } from "@/contexts/SocketContext";
@@ -17,13 +18,15 @@ import { useDeviceFeatures } from "@/hooks/useDeviceFeatures";
 import type { Message } from "@/types";
 import { useEffect, useState, useMemo } from "react";
 
-export default function ChatPage() {
+function ChatPageContent() {
   const [selectedRoomName, setSelectedRoomName] = useState<string>("");
   const [newMessage, setNewMessage] = useState<string>("");
   const [newRoomName, setNewRoomName] = useState<string>("");
-  const [isCreateRoomModalOpen, setIsCreateRoomModalOpen] = useState<boolean>(false);
+  const [isCreateRoomModalOpen, setIsCreateRoomModalOpen] =
+    useState<boolean>(false);
   const [isCameraOpen, setIsCameraOpen] = useState<boolean>(false);
-  const [isGallerySelectorOpen, setIsGallerySelectorOpen] = useState<boolean>(false);
+  const [isGallerySelectorOpen, setIsGallerySelectorOpen] =
+    useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>("");
 
   const socket = useSocket();
@@ -105,7 +108,7 @@ export default function ChatPage() {
     }
     const query = searchQuery.toLowerCase().trim();
     return rooms.filter((room) =>
-      decodeURIComponent(room.name).toLowerCase().includes(query)
+      decodeURIComponent(room.name).toLowerCase().includes(query),
     );
   }, [rooms, searchQuery]);
 
@@ -198,5 +201,13 @@ export default function ChatPage() {
         />
       </main>
     </div>
+  );
+}
+
+export default function ChatPage() {
+  return (
+    <ProtectedRoute>
+      <ChatPageContent />
+    </ProtectedRoute>
   );
 }

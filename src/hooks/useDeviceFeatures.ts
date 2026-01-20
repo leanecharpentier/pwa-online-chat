@@ -57,7 +57,14 @@ export function useDeviceFeatures({
         onMessageAdded(pendingMessage);
       }
     },
-    [isOnline, socket, user, selectedRoomName, addPendingMessage, onMessageAdded],
+    [
+      isOnline,
+      socket,
+      user,
+      selectedRoomName,
+      addPendingMessage,
+      onMessageAdded,
+    ],
   );
 
   const handleBatteryClick = useCallback(async () => {
@@ -108,7 +115,9 @@ export function useDeviceFeatures({
       (error) => {
         // Si timeout avec précision standard, réessayer avec haute précision
         if (error.code === error.TIMEOUT) {
-          logger.info("Timeout avec précision standard, tentative avec haute précision...");
+          logger.info(
+            "Timeout avec précision standard, tentative avec haute précision...",
+          );
           navigator.geolocation.getCurrentPosition(
             (position) => {
               const latitude = position.coords.latitude;
@@ -121,7 +130,10 @@ export function useDeviceFeatures({
               sendMessage(locationMessage);
             },
             (retryError) => {
-              logger.error("Erreur lors de la récupération de la position:", retryError);
+              logger.error(
+                "Erreur lors de la récupération de la position:",
+                retryError,
+              );
               switch (retryError.code) {
                 case retryError.PERMISSION_DENIED:
                   showError("GEOLOCATION_PERMISSION_DENIED");
@@ -172,4 +184,3 @@ export function useDeviceFeatures({
     handleLocationClick,
   };
 }
-

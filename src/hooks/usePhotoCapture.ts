@@ -3,9 +3,12 @@ import { useAuth } from "@/contexts/AuthContext";
 import { useSocket } from "@/contexts/SocketContext";
 import { useOffline } from "./useOffline";
 import API from "@/lib/api";
-import { savePhoto } from "@/lib/photoStorage";
+import { savePhoto, loadPhotos } from "@/lib/photoStorage";
 import { logger } from "@/lib/logger";
-import { isValidImageDataUrl, extractBase64FromDataUrl } from "@/lib/imageUtils";
+import {
+  isValidImageDataUrl,
+  extractBase64FromDataUrl,
+} from "@/lib/imageUtils";
 import { showError, ErrorMessages } from "@/lib/errors";
 import type { Message } from "@/types";
 
@@ -96,31 +99,52 @@ export function usePhotoCapture({
 
       const pseudo = user?.username || "Utilisateur";
 
-      // Sauvegarder la photo dans localStorage pour la galerie
-      const photoData = {
-        id: Date.now().toString(),
-        imageUrl: imageDataUrl,
-        dateEmis: new Date().toISOString(),
-        roomName: selectedRoomName,
-        pseudo,
-      };
-
-      try {
-        savePhoto(photoData);
-      } catch (error) {
-        logger.error("Erreur lors de la sauvegarde:", error);
-        if (error instanceof Error && error.name === "QuotaExceededError") {
-          showError("STORAGE_QUOTA_EXCEEDED");
-        } else {
-          showError("SAVE_ERROR");
-        }
-        return;
-      }
-
-      // Extraire le base64 pour l'envoi
+      // Extraire le base64 pour vérifier si l'image existe déjà
       const base64Data = extractBase64FromDataUrl(imageDataUrl);
 
+      // Vérifier si l'image existe déjà dans le localStorage
+      const existingPhotos = loadPhotos();
+      const imageAlreadyExists = existingPhotos.some((photo) => {
+        if (!photo.imageUrl) return false;
+        try {
+          const photoBase64 = photo.imageUrl.startsWith("data:image")
+            ? extractBase64FromDataUrl(photo.imageUrl)
+            : photo.imageUrl;
+          // Comparer les premiers caractères du base64 pour détecter les doublons
+          return photoBase64.substring(0, 100) === base64Data.substring(0, 100);
+        } catch {
+          return false;
+        }
+      });
+
+      // Sauvegarder la photo dans localStorage seulement si elle n'existe pas déjà
+      if (!imageAlreadyExists) {
+        const photoData = {
+          id: Date.now().toString(),
+          imageUrl: imageDataUrl,
+          dateEmis: new Date().toISOString(),
+          roomName: selectedRoomName,
+          pseudo,
+        };
+
+        try {
+          savePhoto(photoData);
+        } catch (error) {
+          logger.error("Erreur lors de la sauvegarde:", error);
+          if (error instanceof Error && error.name === "QuotaExceededError") {
+            showError("STORAGE_QUOTA_EXCEEDED");
+          } else {
+            showError("SAVE_ERROR");
+          }
+          return;
+        }
+      }
+
+      // Le base64 a déjà été extrait ci-dessus pour la vérification
+
       // Créer un message local pour afficher l'image immédiatement
+      // On utilise un tempId même en ligne pour pouvoir matcher avec le message du serveur
+      const tempId = `photo-${Date.now()}-${Math.random()}`;
       const photoMessage: Message = {
         content: base64Data,
         categorie: "NEW_IMAGE",
@@ -130,6 +154,8 @@ export function usePhotoCapture({
         userId: socket.socket.id,
         imageUrl: imageDataUrl,
         imageId: socket.socket.id,
+        tempId,
+        isPending: true, // Marqué comme en attente jusqu'à réception du serveur
       };
 
       // Vérifier si on est en ligne
@@ -147,9 +173,15 @@ export function usePhotoCapture({
         onMessageAdded(pendingMessage);
       }
     },
-    [selectedRoomName, socket, user, isOnline, addPendingMessage, onMessageAdded],
+    [
+      selectedRoomName,
+      socket,
+      user,
+      isOnline,
+      addPendingMessage,
+      onMessageAdded,
+    ],
   );
 
   return { handlePhotoCapture };
 }
-

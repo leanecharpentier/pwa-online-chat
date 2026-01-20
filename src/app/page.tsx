@@ -25,7 +25,7 @@ function urlBase64ToUint8Array(base64String: string) {
 function PushNotificationManager() {
   const [isSupported, setIsSupported] = useState(false);
   const [subscription, setSubscription] = useState<PushSubscription | null>(
-    null
+    null,
   );
   const [message, setMessage] = useState("");
   const [userId, setUserId] = useState<string>("");
@@ -61,7 +61,7 @@ function PushNotificationManager() {
     const sub = await registration.pushManager.subscribe({
       userVisibleOnly: true,
       applicationServerKey: urlBase64ToUint8Array(
-        process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY!
+        process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY!,
       ),
     });
     setSubscription(sub);
@@ -72,7 +72,7 @@ function PushNotificationManager() {
       expirationTime: sub.expirationTime,
       keys: {
         p256dh: btoa(
-          String.fromCharCode(...new Uint8Array(sub.getKey("p256dh")!))
+          String.fromCharCode(...new Uint8Array(sub.getKey("p256dh")!)),
         ),
         auth: btoa(String.fromCharCode(...new Uint8Array(sub.getKey("auth")!))),
       },
@@ -120,7 +120,7 @@ function PushNotificationManager() {
       alert(
         `Active subscriptions: ${
           subs.count
-        }\nUser IDs: ${subs.userIds.join(", ")}`
+        }\nUser IDs: ${subs.userIds.join(", ")}`,
       );
     } catch (error) {
       logger.error("Error checking subscriptions:", error);
@@ -170,7 +170,7 @@ function InstallPrompt() {
 
   useEffect(() => {
     setIsIOS(
-      /iPad|iPhone|iPod/.test(navigator.userAgent) && !("MSStream" in window)
+      /iPad|iPhone|iPod/.test(navigator.userAgent) && !("MSStream" in window),
     );
 
     setIsStandalone(window.matchMedia("(display-mode: standalone)").matches);
