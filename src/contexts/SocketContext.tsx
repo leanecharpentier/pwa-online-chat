@@ -58,7 +58,7 @@ export const SocketProvider = ({ children }: { children: React.ReactNode }) => {
         });
       }
     },
-    [socket, user?.username]
+    [socket, user?.username],
   );
 
   const sendMessage = useCallback(
@@ -70,7 +70,7 @@ export const SocketProvider = ({ children }: { children: React.ReactNode }) => {
         });
       }
     },
-    [socket, currentRoomName]
+    [socket, currentRoomName],
   );
 
   const sendImage = useCallback(
@@ -84,7 +84,7 @@ export const SocketProvider = ({ children }: { children: React.ReactNode }) => {
         socket.emit("chat-msg", messageData);
       }
     },
-    [socket, currentRoomName]
+    [socket, currentRoomName],
   );
 
   const getMessages = useCallback(
@@ -95,7 +95,7 @@ export const SocketProvider = ({ children }: { children: React.ReactNode }) => {
         });
       }
     },
-    [socket]
+    [socket],
   );
 
   const contextValue = useMemo(
@@ -107,7 +107,7 @@ export const SocketProvider = ({ children }: { children: React.ReactNode }) => {
       sendImage,
       getMessages,
     }),
-    [socket, currentRoomName, joinRoom, sendMessage, sendImage, getMessages]
+    [socket, currentRoomName, joinRoom, sendMessage, sendImage, getMessages],
   );
 
   return (

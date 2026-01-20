@@ -35,7 +35,7 @@ function renderTextWithLinks(text: string): React.ReactNode {
         className="underline hover:opacity-80 break-all"
       >
         {match[0]}
-      </a>
+      </a>,
     );
 
     lastIndex = match.index + match[0].length;
@@ -61,19 +61,33 @@ export function MessageItem({ message, currentUser }: MessageItemProps) {
   }
 
   const isOwnMessage = message.pseudo === currentUser?.username;
+  const isPending = message.isPending === true;
 
   return (
     <div className={`flex ${isOwnMessage ? "justify-end" : "justify-start"}`}>
       <div
         className={`max-w-xs lg:max-w-md px-4 py-2 rounded-lg ${
-          isOwnMessage
-            ? "bg-blue-500 text-white"
-            : "bg-white border border-gray-200 text-gray-900"
+          isPending
+            ? isOwnMessage
+              ? "bg-gray-400 text-white opacity-60"
+              : "bg-gray-100 border border-gray-300 text-gray-500 opacity-60"
+            : isOwnMessage
+              ? "bg-blue-500 text-white"
+              : "bg-white border border-gray-200 text-gray-900"
         }`}
       >
         {!isOwnMessage && (
-          <p className="text-xs font-medium mb-1 text-gray-600">
+          <p
+            className={`text-xs font-medium mb-1 ${
+              isPending ? "text-gray-400" : "text-gray-600"
+            }`}
+          >
             {message.pseudo}
+          </p>
+        )}
+        {isPending && isOwnMessage && (
+          <p className="text-xs mb-1 text-gray-200 italic">
+            En attente d&apos;envoi...
           </p>
         )}
         {message.imageUrl ? (
@@ -91,7 +105,13 @@ export function MessageItem({ message, currentUser }: MessageItemProps) {
         )}
         <p
           className={`text-xs mt-1 ${
-            isOwnMessage ? "text-blue-100" : "text-gray-500"
+            isPending
+              ? isOwnMessage
+                ? "text-gray-200"
+                : "text-gray-400"
+              : isOwnMessage
+                ? "text-blue-100"
+                : "text-gray-500"
           }`}
         >
           {formatTime(message.dateEmis)}

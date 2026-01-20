@@ -8,6 +8,7 @@ import { MessageList } from "@/components/chat/MessageList";
 import { RoomList } from "@/components/chat/RoomList";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSocket } from "@/contexts/SocketContext";
+import { useOffline } from "@/hooks/useOffline";
 import { useRooms } from "@/hooks/useRooms";
 import API from "@/lib/api";
 import type { Message } from "@/types";
@@ -27,6 +28,13 @@ export default function ChatPage() {
   const socket = useSocket();
   const { user } = useAuth();
   const { rooms, loading, error, fetchRooms } = useRooms();
+  const {
+    isOnline,
+    getPendingMessages,
+    addPendingMessage,
+    removePendingMessage,
+    markMessageAsSent,
+  } = useOffline();
 
   const handlePhotoCapture = async (imageDataUrl: string) => {
     // Vérifier que l'image est valide
@@ -80,7 +88,7 @@ export default function ChatPage() {
       } catch (error) {
         console.error("Erreur de connexion socket:", error);
         alert(
-          "Erreur: impossible de se connecter au serveur. Veuillez réessayer."
+          "Erreur: impossible de se connecter au serveur. Veuillez réessayer.",
         );
         return;
       }
@@ -104,7 +112,7 @@ export default function ChatPage() {
     } catch (error) {
       console.warn(
         "⚠️ Erreur lors de l'envoi de l'image à l'API (CORS possible):",
-        error
+        error,
       );
       // On continue quand même, l'image sera envoyée via socket
     }
@@ -131,7 +139,7 @@ export default function ChatPage() {
       console.error("Erreur lors de la sauvegarde:", error);
       if (error instanceof Error && error.name === "QuotaExceededError") {
         alert(
-          "Erreur: L'espace de stockage est plein. Veuillez supprimer des photos."
+          "Erreur: L'espace de stockage est plein. Veuillez supprimer des photos.",
         );
       } else {
         alert("Erreur lors de la sauvegarde de la photo");
@@ -171,12 +179,20 @@ export default function ChatPage() {
           : "",
     });
 
-    // Ajouter le message à l'état pour l'afficher immédiatement
-    setMessages((prevMessages) => [...prevMessages, photoMessage]);
-
-    // Envoyer l'image via socket
-    if (socket.socket?.id) {
-      socket.sendImage(imageDataUrl, socket.socket.id);
+    // Vérifier si on est en ligne
+    if (isOnline && socket.socket?.connected) {
+      // En ligne : ajouter le message et l'envoyer
+      setMessages((prevMessages) => [...prevMessages, photoMessage]);
+      if (socket.socket?.id) {
+        socket.sendImage(imageDataUrl, socket.socket.id);
+      }
+    } else {
+      // Hors ligne : stocker dans localStorage et marquer comme pending
+      const pendingMessage = addPendingMessage({
+        ...photoMessage,
+        content: imageDataUrl, // Stocker le data URL complet pour l'envoi
+      });
+      setMessages((prevMessages) => [...prevMessages, pendingMessage]);
     }
   };
 
@@ -195,7 +211,7 @@ export default function ChatPage() {
   const createMessageKey = useCallback(
     (message: Message) =>
       `${message.dateEmis}-${message.pseudo || message.userId}-${message.content?.substring(0, 50)}`,
-    []
+    [],
   );
 
   const isMessageDuplicate = useCallback(
@@ -203,8 +219,97 @@ export default function ChatPage() {
       const newKey = createMessageKey(newMessage);
       return existingMessages.some((msg) => createMessageKey(msg) === newKey);
     },
-    [createMessageKey]
+    [createMessageKey],
   );
+
+  // Charger les messages en attente pour la salle actuelle au chargement
+  useEffect(() => {
+    if (selectedRoomName) {
+      const pending = getPendingMessages();
+      const roomPending = pending.filter(
+        (msg) => msg.roomName === selectedRoomName && msg.isPending,
+      );
+      if (roomPending.length > 0) {
+        setMessages((prevMessages) => {
+          // Éviter les doublons
+          const existingTempIds = new Set(
+            prevMessages.map((m) => m.tempId).filter(Boolean),
+          );
+          const newPending = roomPending.filter(
+            (msg) => !existingTempIds.has(msg.tempId),
+          );
+          return [...prevMessages, ...newPending];
+        });
+      }
+    }
+  }, [selectedRoomName, getPendingMessages]);
+
+  // Envoyer automatiquement les messages en attente quand la connexion revient
+  useEffect(() => {
+    if (isOnline && socket.socket?.connected && selectedRoomName) {
+      // S'assurer que la salle est jointe
+      if (socket.currentRoomName !== selectedRoomName) {
+        socket.joinRoom(selectedRoomName);
+      }
+
+      // Attendre un peu pour que la salle soit bien jointe
+      const sendPendingMessages = async () => {
+        await new Promise((resolve) => setTimeout(resolve, 500));
+
+        const pending = getPendingMessages();
+        const roomPending = pending.filter(
+          (msg) => msg.roomName === selectedRoomName && msg.isPending,
+        );
+
+        if (roomPending.length > 0) {
+          console.log(
+            `📤 Envoi de ${roomPending.length} message(s) en attente`,
+          );
+
+          for (const pendingMsg of roomPending) {
+            try {
+              // Envoyer le message via socket
+              if (pendingMsg.categorie === "NEW_IMAGE" && pendingMsg.imageUrl) {
+                // Pour les images, envoyer le data URL
+                socket.sendImage(
+                  pendingMsg.imageUrl,
+                  pendingMsg.userId || socket.socket?.id || "",
+                );
+              } else {
+                // Pour les messages texte
+                socket.sendMessage(pendingMsg.content);
+              }
+
+              // Marquer comme envoyé (mais garder dans localStorage jusqu'à confirmation)
+              markMessageAsSent(pendingMsg.tempId!);
+
+              // Mettre à jour l'affichage
+              setMessages((prevMessages) =>
+                prevMessages.map((msg) =>
+                  msg.tempId === pendingMsg.tempId
+                    ? { ...msg, isPending: false }
+                    : msg,
+                ),
+              );
+            } catch (error) {
+              console.error(
+                "Erreur lors de l'envoi du message en attente:",
+                error,
+              );
+            }
+          }
+        }
+      };
+
+      sendPendingMessages();
+    }
+  }, [
+    isOnline,
+    socket,
+    selectedRoomName,
+    getPendingMessages,
+    markMessageAsSent,
+  ]);
 
   useEffect(() => {
     if (!socket) return;
@@ -247,7 +352,7 @@ export default function ChatPage() {
           data.imageUrl = `data:image/jpeg;base64,${data.content}`;
           console.log(
             "✅ Image convertie en data URL depuis base64, longueur:",
-            data.content.length
+            data.content.length,
           );
         }
 
@@ -258,11 +363,38 @@ export default function ChatPage() {
 
         console.log(
           "🖼️ ImageUrl final:",
-          data.imageUrl ? data.imageUrl.substring(0, 80) + "..." : "non défini"
+          data.imageUrl ? data.imageUrl.substring(0, 80) + "..." : "non défini",
         );
       }
 
       setMessages((prevMessages) => {
+        // Vérifier si c'est un message qui correspond à un message en attente
+        // (pour le mettre à jour au lieu de créer un doublon)
+        const matchingPending = prevMessages.find(
+          (msg) =>
+            msg.isPending &&
+            msg.tempId &&
+            msg.content === data.content &&
+            msg.roomName === data.roomName &&
+            Math.abs(
+              new Date(msg.dateEmis).getTime() -
+                new Date(data.dateEmis).getTime(),
+            ) < 5000, // Dans les 5 secondes
+        );
+
+        if (matchingPending) {
+          // Remplacer le message en attente par le message confirmé
+          const updated = prevMessages.map((msg) =>
+            msg.tempId === matchingPending.tempId
+              ? { ...data, isPending: false }
+              : msg,
+          );
+          // Supprimer du localStorage
+          removePendingMessage(matchingPending.tempId!);
+          console.log("✅ Message en attente confirmé et mis à jour");
+          return updated;
+        }
+
         if (isMessageDuplicate(data, prevMessages)) {
           console.log("⚠️ Message dupliqué ignoré");
           return prevMessages;
@@ -273,14 +405,33 @@ export default function ChatPage() {
     };
 
     socket.getMessages(handleNewMessage);
-  }, [socket, selectedRoomName, isMessageDuplicate]);
+  }, [socket, selectedRoomName, isMessageDuplicate, removePendingMessage]);
 
   const selectedRoom = rooms.find((room) => room.name === selectedRoomName);
 
   const handleSendMessage = () => {
     if (newMessage.trim()) {
-      socket.sendMessage(newMessage);
-      setNewMessage("");
+      const pseudo = user?.username || "Utilisateur";
+      const messageData: Message = {
+        content: newMessage.trim(),
+        categorie: "MESSAGE",
+        dateEmis: new Date().toISOString(),
+        roomName: selectedRoomName,
+        pseudo,
+        userId: socket.socket?.id || "",
+      };
+
+      if (isOnline && socket.socket?.connected) {
+        // En ligne : envoyer directement
+        socket.sendMessage(newMessage.trim());
+        setNewMessage("");
+      } else {
+        // Hors ligne : stocker dans localStorage
+        const pendingMessage = addPendingMessage(messageData);
+        // Ajouter le message à l'affichage avec le statut pending
+        setMessages((prevMessages) => [...prevMessages, pendingMessage]);
+        setNewMessage("");
+      }
     }
   };
 
@@ -319,12 +470,26 @@ export default function ChatPage() {
       // Créer le message avec le niveau de batterie
       const batteryMessage = `🔋 Batterie: ${batteryLevel}%${isCharging ? " (en charge)" : ""}`;
 
-      // Envoyer le message via socket
-      socket.sendMessage(batteryMessage);
+      // Envoyer le message via socket ou le stocker si hors ligne
+      if (isOnline && socket.socket?.connected) {
+        socket.sendMessage(batteryMessage);
+      } else {
+        const pseudo = user?.username || "Utilisateur";
+        const messageData: Message = {
+          content: batteryMessage,
+          categorie: "MESSAGE",
+          dateEmis: new Date().toISOString(),
+          roomName: selectedRoomName,
+          pseudo,
+          userId: socket.socket?.id || "",
+        };
+        const pendingMessage = addPendingMessage(messageData);
+        setMessages((prevMessages) => [...prevMessages, pendingMessage]);
+      }
     } catch (error) {
       console.error("Erreur lors de la récupération de la batterie:", error);
       alert(
-        "Erreur: impossible d'accéder aux informations de batterie. Cette fonctionnalité n'est peut-être pas supportée par votre navigateur."
+        "Erreur: impossible d'accéder aux informations de batterie. Cette fonctionnalité n'est peut-être pas supportée par votre navigateur.",
       );
     }
   };
@@ -349,7 +514,7 @@ export default function ChatPage() {
     // Vérifier si la géolocalisation est disponible
     if (!navigator.geolocation) {
       alert(
-        "Erreur: la géolocalisation n'est pas supportée par votre navigateur."
+        "Erreur: la géolocalisation n'est pas supportée par votre navigateur.",
       );
       return;
     }
@@ -365,8 +530,22 @@ export default function ChatPage() {
         const googleMapsUrl = `https://www.google.com/maps?q=${latitude},${longitude}`;
         const locationMessage = `📍 Ma position: ${latitude.toFixed(6)}, ${longitude.toFixed(6)} (précision: ${accuracy}m)\n${googleMapsUrl}`;
 
-        // Envoyer le message via socket
-        socket.sendMessage(locationMessage);
+        // Envoyer le message via socket ou le stocker si hors ligne
+        if (isOnline && socket.socket?.connected) {
+          socket.sendMessage(locationMessage);
+        } else {
+          const pseudo = user?.username || "Utilisateur";
+          const messageData: Message = {
+            content: locationMessage,
+            categorie: "MESSAGE",
+            dateEmis: new Date().toISOString(),
+            roomName: selectedRoomName,
+            pseudo,
+            userId: socket.socket?.id || "",
+          };
+          const pendingMessage = addPendingMessage(messageData);
+          setMessages((prevMessages) => [...prevMessages, pendingMessage]);
+        }
       },
       (error) => {
         console.error("Erreur lors de la récupération de la position:", error);
@@ -391,7 +570,7 @@ export default function ChatPage() {
         enableHighAccuracy: true,
         timeout: 10000,
         maximumAge: 0,
-      }
+      },
     );
   };
 
@@ -447,7 +626,9 @@ export default function ChatPage() {
                   <h1 className="font-semibold text-gray-900">
                     {decodeURIComponent(selectedRoom.name)}
                   </h1>
-                  <p className="text-sm text-gray-500">En ligne</p>
+                  <p className="text-sm text-gray-500">
+                    {isOnline ? "En ligne" : "Hors ligne"}
+                  </p>
                 </div>
               </div>
             </div>

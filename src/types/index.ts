@@ -9,6 +9,8 @@ export interface Message {
   serverId?: string; // Identifiant du serveur
   imageUrl?: string; // URL de l'image pour l'affichage (généré côté client)
   imageId?: string; // Pour compatibilité
+  isPending?: boolean; // Indique si le message est en attente d'envoi
+  tempId?: string; // ID temporaire pour les messages en attente
 }
 
 export interface Room {
