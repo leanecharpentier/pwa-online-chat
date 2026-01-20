@@ -1,4 +1,5 @@
 import type { PhotoData } from "@/types";
+import { logger } from "./logger";
 
 const STORAGE_KEY = "galleryPhotos";
 
@@ -30,10 +31,10 @@ export function loadPhotos(): PhotoData[] {
     // Trier par date (plus récentes en premier)
     return validPhotos.sort(
       (a: PhotoData, b: PhotoData) =>
-        new Date(b.dateEmis).getTime() - new Date(a.dateEmis).getTime()
+        new Date(b.dateEmis).getTime() - new Date(a.dateEmis).getTime(),
     );
   } catch (error) {
-    console.error("Erreur lors du chargement des photos:", error);
+    logger.error("Erreur lors du chargement des photos:", error);
     return [];
   }
 }

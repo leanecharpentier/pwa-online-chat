@@ -7,6 +7,7 @@ import {
   subscribeUser,
   unsubscribeUser,
 } from "./actions";
+import { logger } from "@/lib/logger";
 
 function urlBase64ToUint8Array(base64String: string) {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
@@ -24,7 +25,7 @@ function urlBase64ToUint8Array(base64String: string) {
 function PushNotificationManager() {
   const [isSupported, setIsSupported] = useState(false);
   const [subscription, setSubscription] = useState<PushSubscription | null>(
-    null
+    null,
   );
   const [message, setMessage] = useState("");
   const [userId, setUserId] = useState<string>("");
@@ -60,7 +61,7 @@ function PushNotificationManager() {
     const sub = await registration.pushManager.subscribe({
       userVisibleOnly: true,
       applicationServerKey: urlBase64ToUint8Array(
-        process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY!
+        process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY!,
       ),
     });
     setSubscription(sub);
@@ -71,18 +72,20 @@ function PushNotificationManager() {
       expirationTime: sub.expirationTime,
       keys: {
         p256dh: btoa(
-          String.fromCharCode(...new Uint8Array(sub.getKey("p256dh")!))
+          String.fromCharCode(...new Uint8Array(sub.getKey("p256dh")!)),
         ),
         auth: btoa(String.fromCharCode(...new Uint8Array(sub.getKey("auth")!))),
       },
     };
 
     try {
-      console.log(`Subscribing user ${userId} with data:`, subscriptionData);
       const result = await subscribeUser(userId, subscriptionData);
-      console.log("Subscription result:", result);
+      if (!result.success) {
+        logger.error("Error subscribing user:", result.error);
+        alert(`Error subscribing: ${result.error}`);
+      }
     } catch (error) {
-      console.error("Error subscribing user:", error);
+      logger.error("Error subscribing user:", error);
       alert(`Error subscribing: ${error}`);
     }
   }
@@ -98,17 +101,14 @@ function PushNotificationManager() {
   async function sendTestNotification() {
     if (subscription && userId && message) {
       try {
-        console.log(`Sending notification for user: ${userId}`);
         const result = await sendNotification(userId, message);
-        if (result.success) {
-          console.log("Notification sent successfully");
-        } else {
-          console.error("Failed to send notification:", result.error);
+        if (!result.success) {
+          logger.error("Failed to send notification:", result.error);
           alert(`Failed to send notification: ${result.error}`);
         }
         setMessage("");
       } catch (error) {
-        console.error("Error sending notification:", error);
+        logger.error("Error sending notification:", error);
         alert(`Error: ${error}`);
       }
     }
@@ -117,14 +117,13 @@ function PushNotificationManager() {
   async function checkSubscriptions() {
     try {
       const subs = await getSubscriptions();
-      console.log("Active subscriptions:", subs);
       alert(
         `Active subscriptions: ${
           subs.count
-        }\nUser IDs: ${subs.userIds.join(", ")}`
+        }\nUser IDs: ${subs.userIds.join(", ")}`,
       );
     } catch (error) {
-      console.error("Error checking subscriptions:", error);
+      logger.error("Error checking subscriptions:", error);
     }
   }
 
@@ -171,7 +170,7 @@ function InstallPrompt() {
 
   useEffect(() => {
     setIsIOS(
-      /iPad|iPhone|iPod/.test(navigator.userAgent) && !("MSStream" in window)
+      /iPad|iPhone|iPod/.test(navigator.userAgent) && !("MSStream" in window),
     );
 
     setIsStandalone(window.matchMedia("(display-mode: standalone)").matches);

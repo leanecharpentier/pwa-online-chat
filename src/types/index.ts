@@ -1,16 +1,18 @@
+export type MessageCategory = "MESSAGE" | "INFO" | "NEW_IMAGE";
+
 export interface Message {
   id?: string;
   content: string;
-  categorie: string; // "MESSAGE" | "INFO" | "NEW_IMAGE" selon la doc
+  categorie: MessageCategory;
   dateEmis: string;
   roomName: string;
-  pseudo?: string; // Pour compatibilité avec l'ancien code
-  userId?: string; // Identifiant de l'utilisateur (format API)
-  serverId?: string; // Identifiant du serveur
-  imageUrl?: string; // URL de l'image pour l'affichage (généré côté client)
-  imageId?: string; // Pour compatibilité
-  isPending?: boolean; // Indique si le message est en attente d'envoi
-  tempId?: string; // ID temporaire pour les messages en attente
+  pseudo?: string;
+  userId?: string;
+  serverId?: string;
+  imageUrl?: string;
+  imageId?: string;
+  isPending?: boolean;
+  tempId?: string;
 }
 
 export interface Room {

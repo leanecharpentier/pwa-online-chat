@@ -6,6 +6,8 @@ import { PhotoModal } from "@/components/gallery/PhotoModal";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/contexts/AuthContext";
 import { usePhotoStorage } from "@/hooks/usePhotoStorage";
+import { isValidImageDataUrl } from "@/lib/imageUtils";
+import { showError } from "@/lib/errors";
 import type { PhotoData } from "@/types";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
@@ -24,8 +26,8 @@ export default function GalleryPage() {
   }, [isAuthenticated, router]);
 
   const handlePhotoCapture = (imageDataUrl: string) => {
-    if (!imageDataUrl.startsWith("data:image")) {
-      alert("Erreur: format d'image invalide");
+    if (!isValidImageDataUrl(imageDataUrl)) {
+      showError("INVALID_IMAGE_FORMAT");
       return;
     }
 

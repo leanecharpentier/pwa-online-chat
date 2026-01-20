@@ -12,7 +12,7 @@ function Input({ className, type, ...props }: React.ComponentProps<"input">) {
         "placeholder:text-gray-400",
         "focus:outline-none focus:border-blue-500 focus:caret-black",
         "disabled:opacity-50 disabled:cursor-not-allowed",
-        className
+        className,
       )}
       {...props}
     />

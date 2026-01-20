@@ -6,16 +6,19 @@ import { GallerySelector } from "@/components/chat/GallerySelector";
 import { MessageInput } from "@/components/chat/MessageInput";
 import { MessageList } from "@/components/chat/MessageList";
 import { RoomList } from "@/components/chat/RoomList";
+import ProtectedRoute from "@/components/ProtectedRoute";
+import { Input } from "@/components/ui/input";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSocket } from "@/contexts/SocketContext";
 import { useOffline } from "@/hooks/useOffline";
 import { useRooms } from "@/hooks/useRooms";
-import API from "@/lib/api";
+import { useMessages } from "@/hooks/useMessages";
+import { usePhotoCapture } from "@/hooks/usePhotoCapture";
+import { useDeviceFeatures } from "@/hooks/useDeviceFeatures";
 import type { Message } from "@/types";
-import { useCallback, useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 
-export default function ChatPage() {
-  const [messages, setMessages] = useState<Message[]>([]);
+function ChatPageContent() {
   const [selectedRoomName, setSelectedRoomName] = useState<string>("");
   const [newMessage, setNewMessage] = useState<string>("");
   const [newRoomName, setNewRoomName] = useState<string>("");
@@ -24,178 +27,31 @@ export default function ChatPage() {
   const [isCameraOpen, setIsCameraOpen] = useState<boolean>(false);
   const [isGallerySelectorOpen, setIsGallerySelectorOpen] =
     useState<boolean>(false);
+  const [searchQuery, setSearchQuery] = useState<string>("");
 
   const socket = useSocket();
   const { user } = useAuth();
   const { rooms, loading, error, fetchRooms } = useRooms();
-  const {
+  const { isOnline, addPendingMessage } = useOffline();
+
+  const { messages, addMessage, clearMessages } = useMessages({
+    selectedRoomName,
     isOnline,
-    getPendingMessages,
-    addPendingMessage,
-    removePendingMessage,
-    markMessageAsSent,
-  } = useOffline();
+  });
 
-  const handlePhotoCapture = async (imageDataUrl: string) => {
-    // Vérifier que l'image est valide
-    if (!imageDataUrl.startsWith("data:image")) {
-      alert("Erreur: format d'image invalide");
-      return;
-    }
+  const { handlePhotoCapture } = usePhotoCapture({
+    selectedRoomName,
+    isOnline,
+    onMessageAdded: addMessage,
+  });
 
-    if (!selectedRoomName) {
-      alert("Erreur: aucune salle sélectionnée");
-      return;
-    }
+  const { handleBatteryClick, handleLocationClick } = useDeviceFeatures({
+    selectedRoomName,
+    isOnline,
+    onMessageAdded: addMessage,
+  });
 
-    const pseudo = user?.username || "Utilisateur";
-
-    // Vérifier que le socket est connecté et a un id
-    if (!socket.socket) {
-      alert("Erreur: socket non initialisé. Veuillez rafraîchir la page.");
-      return;
-    }
-
-    if (!socket.socket.connected) {
-      // Attendre que le socket se connecte (max 5 secondes)
-      try {
-        await new Promise<void>((resolve, reject) => {
-          if (!socket.socket) {
-            reject(new Error("Socket non initialisé"));
-            return;
-          }
-
-          const timeout = setTimeout(() => {
-            reject(new Error("Timeout: le socket ne s'est pas connecté"));
-          }, 5000);
-
-          if (socket.socket.connected) {
-            clearTimeout(timeout);
-            resolve();
-            return;
-          }
-
-          socket.socket.once("connect", () => {
-            clearTimeout(timeout);
-            resolve();
-          });
-
-          socket.socket.once("connect_error", (error) => {
-            clearTimeout(timeout);
-            reject(error);
-          });
-        });
-      } catch (error) {
-        console.error("Erreur de connexion socket:", error);
-        alert(
-          "Erreur: impossible de se connecter au serveur. Veuillez réessayer.",
-        );
-        return;
-      }
-    }
-
-    if (!socket.socket.id) {
-      alert("Erreur: socket ID non disponible. Veuillez réessayer.");
-      return;
-    }
-
-    // S'assurer que la salle est jointe dans le contexte socket
-    if (socket.currentRoomName !== selectedRoomName) {
-      socket.joinRoom(selectedRoomName);
-    }
-
-    // Essayer d'envoyer l'image à l'API (optionnel, peut échouer à cause de CORS)
-    // Si ça échoue, on continue quand même avec l'envoi via socket
-    try {
-      await API.postImage(imageDataUrl, socket.socket.id);
-      console.log("✅ Image envoyée à l'API avec succès");
-    } catch (error) {
-      console.warn(
-        "⚠️ Erreur lors de l'envoi de l'image à l'API (CORS possible):",
-        error,
-      );
-      // On continue quand même, l'image sera envoyée via socket
-    }
-
-    // Sauvegarder la photo dans localStorage pour la galerie
-    const photoData = {
-      id: Date.now().toString(),
-      imageUrl: imageDataUrl,
-      dateEmis: new Date().toISOString(),
-      roomName: selectedRoomName,
-      pseudo,
-    };
-
-    // Récupérer les photos existantes
-    const savedPhotos = localStorage.getItem("galleryPhotos");
-    const photos = savedPhotos ? JSON.parse(savedPhotos) : [];
-    photos.push(photoData);
-
-    // Sauvegarder dans localStorage
-    try {
-      localStorage.setItem("galleryPhotos", JSON.stringify(photos));
-      globalThis.dispatchEvent(new Event("galleryUpdated"));
-    } catch (error) {
-      console.error("Erreur lors de la sauvegarde:", error);
-      if (error instanceof Error && error.name === "QuotaExceededError") {
-        alert(
-          "Erreur: L'espace de stockage est plein. Veuillez supprimer des photos.",
-        );
-      } else {
-        alert("Erreur lors de la sauvegarde de la photo");
-      }
-      return;
-    }
-
-    // Extraire le base64 pour l'envoi
-    const base64Data = imageDataUrl.split(",")[1] || "";
-
-    console.log("📤 Préparation envoi image:", {
-      imageDataUrlLength: imageDataUrl.length,
-      base64DataLength: base64Data.length,
-      base64Preview: base64Data.substring(0, 50) + "...",
-      startsWithDataImage: imageDataUrl.startsWith("data:image"),
-    });
-
-    // Créer un message local pour afficher l'image immédiatement
-    const photoMessage: Message = {
-      content: base64Data, // base64 sans le préfixe (comme ce qui sera envoyé via socket)
-      categorie: "NEW_IMAGE", // Catégorie selon la doc API
-      dateEmis: new Date().toISOString(),
-      roomName: selectedRoomName,
-      pseudo,
-      userId: socket.socket.id, // Utiliser socket.id comme userId
-      imageUrl: imageDataUrl, // data URL complet pour l'affichage immédiat
-      imageId: socket.socket.id,
-    };
-
-    console.log("📸 Création message image local:", {
-      hasContent: !!photoMessage.content,
-      contentLength: photoMessage.content.length,
-      hasImageUrl: !!photoMessage.imageUrl,
-      imageUrlPreview:
-        photoMessage.imageUrl && photoMessage.imageUrl.length > 0
-          ? photoMessage.imageUrl.substring(0, 50)
-          : "",
-    });
-
-    // Vérifier si on est en ligne
-    if (isOnline && socket.socket?.connected) {
-      // En ligne : ajouter le message et l'envoyer
-      setMessages((prevMessages) => [...prevMessages, photoMessage]);
-      if (socket.socket?.id) {
-        socket.sendImage(imageDataUrl, socket.socket.id);
-      }
-    } else {
-      // Hors ligne : stocker dans localStorage et marquer comme pending
-      const pendingMessage = addPendingMessage({
-        ...photoMessage,
-        content: imageDataUrl, // Stocker le data URL complet pour l'envoi
-      });
-      setMessages((prevMessages) => [...prevMessages, pendingMessage]);
-    }
-  };
-
+  // Sélectionner automatiquement la première salle
   useEffect(() => {
     if (rooms.length > 0 && !selectedRoomName) {
       setSelectedRoomName(rooms[0].name);
@@ -204,210 +60,9 @@ export default function ChatPage() {
 
   const handleRoomSelection = (roomName: string) => {
     setSelectedRoomName(roomName);
-    setMessages([]);
+    clearMessages();
     socket.joinRoom(roomName);
   };
-
-  const createMessageKey = useCallback(
-    (message: Message) =>
-      `${message.dateEmis}-${message.pseudo || message.userId}-${message.content?.substring(0, 50)}`,
-    [],
-  );
-
-  const isMessageDuplicate = useCallback(
-    (newMessage: Message, existingMessages: Message[]) => {
-      const newKey = createMessageKey(newMessage);
-      return existingMessages.some((msg) => createMessageKey(msg) === newKey);
-    },
-    [createMessageKey],
-  );
-
-  // Charger les messages en attente pour la salle actuelle au chargement
-  useEffect(() => {
-    if (selectedRoomName) {
-      const pending = getPendingMessages();
-      const roomPending = pending.filter(
-        (msg) => msg.roomName === selectedRoomName && msg.isPending,
-      );
-      if (roomPending.length > 0) {
-        setMessages((prevMessages) => {
-          // Éviter les doublons
-          const existingTempIds = new Set(
-            prevMessages.map((m) => m.tempId).filter(Boolean),
-          );
-          const newPending = roomPending.filter(
-            (msg) => !existingTempIds.has(msg.tempId),
-          );
-          return [...prevMessages, ...newPending];
-        });
-      }
-    }
-  }, [selectedRoomName, getPendingMessages]);
-
-  // Envoyer automatiquement les messages en attente quand la connexion revient
-  useEffect(() => {
-    if (isOnline && socket.socket?.connected && selectedRoomName) {
-      // S'assurer que la salle est jointe
-      if (socket.currentRoomName !== selectedRoomName) {
-        socket.joinRoom(selectedRoomName);
-      }
-
-      // Attendre un peu pour que la salle soit bien jointe
-      const sendPendingMessages = async () => {
-        await new Promise((resolve) => setTimeout(resolve, 500));
-
-        const pending = getPendingMessages();
-        const roomPending = pending.filter(
-          (msg) => msg.roomName === selectedRoomName && msg.isPending,
-        );
-
-        if (roomPending.length > 0) {
-          console.log(
-            `📤 Envoi de ${roomPending.length} message(s) en attente`,
-          );
-
-          for (const pendingMsg of roomPending) {
-            try {
-              // Envoyer le message via socket
-              if (pendingMsg.categorie === "NEW_IMAGE" && pendingMsg.imageUrl) {
-                // Pour les images, envoyer le data URL
-                socket.sendImage(
-                  pendingMsg.imageUrl,
-                  pendingMsg.userId || socket.socket?.id || "",
-                );
-              } else {
-                // Pour les messages texte
-                socket.sendMessage(pendingMsg.content);
-              }
-
-              // Marquer comme envoyé (mais garder dans localStorage jusqu'à confirmation)
-              markMessageAsSent(pendingMsg.tempId!);
-
-              // Mettre à jour l'affichage
-              setMessages((prevMessages) =>
-                prevMessages.map((msg) =>
-                  msg.tempId === pendingMsg.tempId
-                    ? { ...msg, isPending: false }
-                    : msg,
-                ),
-              );
-            } catch (error) {
-              console.error(
-                "Erreur lors de l'envoi du message en attente:",
-                error,
-              );
-            }
-          }
-        }
-      };
-
-      sendPendingMessages();
-    }
-  }, [
-    isOnline,
-    socket,
-    selectedRoomName,
-    getPendingMessages,
-    markMessageAsSent,
-  ]);
-
-  useEffect(() => {
-    if (!socket) return;
-
-    const handleNewMessage = async (data: Message) => {
-      if (data.roomName !== selectedRoomName) {
-        console.log("⚠️ Message ignoré (mauvaise salle):", {
-          messageRoom: data.roomName,
-          selectedRoom: selectedRoomName,
-        });
-        return;
-      }
-
-      console.log("🔄 Traitement du message:", {
-        categorie: data.categorie,
-        hasContent: !!data.content,
-        contentPreview: data.content?.substring(0, 50),
-      });
-
-      // Si c'est un message avec une image (categorie: "NEW_IMAGE" selon la doc)
-      if (data.categorie === "NEW_IMAGE" && data.content) {
-        // Le serveur retourne soit :
-        // 1. Une URL d'image (ex: https://api.tools.gavago.fr/socketio/api/images/4DC5oAU_jAFik9XDABuQ)
-        // 2. Du base64 (si on reçoit directement)
-        // 3. Un data URL
-
-        if (
-          data.content.startsWith("http://") ||
-          data.content.startsWith("https://")
-        ) {
-          // C'est une URL d'image retournée par le serveur
-          data.imageUrl = data.content;
-          console.log("✅ Image URL reçue du serveur:", data.content);
-        } else if (data.content.startsWith("data:image")) {
-          // C'est déjà un data URL
-          data.imageUrl = data.content;
-          console.log("✅ Image déjà en format data URL");
-        } else {
-          // C'est du base64, on le convertit en data URL
-          data.imageUrl = `data:image/jpeg;base64,${data.content}`;
-          console.log(
-            "✅ Image convertie en data URL depuis base64, longueur:",
-            data.content.length,
-          );
-        }
-
-        // Mapper userId vers pseudo pour l'affichage si nécessaire
-        if (data.userId && !data.pseudo) {
-          data.pseudo = data.userId;
-        }
-
-        console.log(
-          "🖼️ ImageUrl final:",
-          data.imageUrl ? data.imageUrl.substring(0, 80) + "..." : "non défini",
-        );
-      }
-
-      setMessages((prevMessages) => {
-        // Vérifier si c'est un message qui correspond à un message en attente
-        // (pour le mettre à jour au lieu de créer un doublon)
-        const matchingPending = prevMessages.find(
-          (msg) =>
-            msg.isPending &&
-            msg.tempId &&
-            msg.content === data.content &&
-            msg.roomName === data.roomName &&
-            Math.abs(
-              new Date(msg.dateEmis).getTime() -
-                new Date(data.dateEmis).getTime(),
-            ) < 5000, // Dans les 5 secondes
-        );
-
-        if (matchingPending) {
-          // Remplacer le message en attente par le message confirmé
-          const updated = prevMessages.map((msg) =>
-            msg.tempId === matchingPending.tempId
-              ? { ...data, isPending: false }
-              : msg,
-          );
-          // Supprimer du localStorage
-          removePendingMessage(matchingPending.tempId!);
-          console.log("✅ Message en attente confirmé et mis à jour");
-          return updated;
-        }
-
-        if (isMessageDuplicate(data, prevMessages)) {
-          console.log("⚠️ Message dupliqué ignoré");
-          return prevMessages;
-        }
-        console.log("✅ Message ajouté à la liste");
-        return [...prevMessages, data];
-      });
-    };
-
-    socket.getMessages(handleNewMessage);
-  }, [socket, selectedRoomName, isMessageDuplicate, removePendingMessage]);
-
-  const selectedRoom = rooms.find((room) => room.name === selectedRoomName);
 
   const handleSendMessage = () => {
     if (newMessage.trim()) {
@@ -422,156 +77,14 @@ export default function ChatPage() {
       };
 
       if (isOnline && socket.socket?.connected) {
-        // En ligne : envoyer directement
         socket.sendMessage(newMessage.trim());
         setNewMessage("");
       } else {
-        // Hors ligne : stocker dans localStorage
         const pendingMessage = addPendingMessage(messageData);
-        // Ajouter le message à l'affichage avec le statut pending
-        setMessages((prevMessages) => [...prevMessages, pendingMessage]);
+        addMessage(pendingMessage);
         setNewMessage("");
       }
     }
-  };
-
-  const handleBatteryClick = async () => {
-    if (!selectedRoomName) {
-      alert("Erreur: aucune salle sélectionnée");
-      return;
-    }
-
-    // Vérifier que le socket est connecté
-    if (!socket.socket || !socket.socket.connected || !socket.socket.id) {
-      alert("Erreur: socket non connecté. Veuillez attendre la connexion.");
-      return;
-    }
-
-    // S'assurer que la salle est jointe dans le contexte socket
-    if (socket.currentRoomName !== selectedRoomName) {
-      socket.joinRoom(selectedRoomName);
-    }
-
-    try {
-      // Obtenir le niveau de batterie
-      interface BatteryManager {
-        level: number;
-        charging: boolean;
-      }
-
-      const navigatorWithBattery = navigator as typeof navigator & {
-        getBattery: () => Promise<BatteryManager>;
-      };
-
-      const battery = await navigatorWithBattery.getBattery();
-      const batteryLevel = Math.round(battery.level * 100);
-      const isCharging = battery.charging;
-
-      // Créer le message avec le niveau de batterie
-      const batteryMessage = `🔋 Batterie: ${batteryLevel}%${isCharging ? " (en charge)" : ""}`;
-
-      // Envoyer le message via socket ou le stocker si hors ligne
-      if (isOnline && socket.socket?.connected) {
-        socket.sendMessage(batteryMessage);
-      } else {
-        const pseudo = user?.username || "Utilisateur";
-        const messageData: Message = {
-          content: batteryMessage,
-          categorie: "MESSAGE",
-          dateEmis: new Date().toISOString(),
-          roomName: selectedRoomName,
-          pseudo,
-          userId: socket.socket?.id || "",
-        };
-        const pendingMessage = addPendingMessage(messageData);
-        setMessages((prevMessages) => [...prevMessages, pendingMessage]);
-      }
-    } catch (error) {
-      console.error("Erreur lors de la récupération de la batterie:", error);
-      alert(
-        "Erreur: impossible d'accéder aux informations de batterie. Cette fonctionnalité n'est peut-être pas supportée par votre navigateur.",
-      );
-    }
-  };
-
-  const handleLocationClick = () => {
-    if (!selectedRoomName) {
-      alert("Erreur: aucune salle sélectionnée");
-      return;
-    }
-
-    // Vérifier que le socket est connecté
-    if (!socket.socket || !socket.socket.connected || !socket.socket.id) {
-      alert("Erreur: socket non connecté. Veuillez attendre la connexion.");
-      return;
-    }
-
-    // S'assurer que la salle est jointe dans le contexte socket
-    if (socket.currentRoomName !== selectedRoomName) {
-      socket.joinRoom(selectedRoomName);
-    }
-
-    // Vérifier si la géolocalisation est disponible
-    if (!navigator.geolocation) {
-      alert(
-        "Erreur: la géolocalisation n'est pas supportée par votre navigateur.",
-      );
-      return;
-    }
-
-    // Demander la permission et récupérer la position
-    navigator.geolocation.getCurrentPosition(
-      (position) => {
-        const latitude = position.coords.latitude;
-        const longitude = position.coords.longitude;
-        const accuracy = Math.round(position.coords.accuracy);
-
-        // Créer le message avec la position et un lien Google Maps
-        const googleMapsUrl = `https://www.google.com/maps?q=${latitude},${longitude}`;
-        const locationMessage = `📍 Ma position: ${latitude.toFixed(6)}, ${longitude.toFixed(6)} (précision: ${accuracy}m)\n${googleMapsUrl}`;
-
-        // Envoyer le message via socket ou le stocker si hors ligne
-        if (isOnline && socket.socket?.connected) {
-          socket.sendMessage(locationMessage);
-        } else {
-          const pseudo = user?.username || "Utilisateur";
-          const messageData: Message = {
-            content: locationMessage,
-            categorie: "MESSAGE",
-            dateEmis: new Date().toISOString(),
-            roomName: selectedRoomName,
-            pseudo,
-            userId: socket.socket?.id || "",
-          };
-          const pendingMessage = addPendingMessage(messageData);
-          setMessages((prevMessages) => [...prevMessages, pendingMessage]);
-        }
-      },
-      (error) => {
-        console.error("Erreur lors de la récupération de la position:", error);
-        let errorMessage = "Erreur: impossible d'obtenir votre position.";
-        switch (error.code) {
-          case error.PERMISSION_DENIED:
-            errorMessage =
-              "Erreur: permission de géolocalisation refusée. Veuillez autoriser l'accès à votre position.";
-            break;
-          case error.POSITION_UNAVAILABLE:
-            errorMessage =
-              "Erreur: position indisponible. Vérifiez que votre GPS est activé.";
-            break;
-          case error.TIMEOUT:
-            errorMessage =
-              "Erreur: timeout lors de la récupération de la position. Veuillez réessayer.";
-            break;
-        }
-        alert(errorMessage);
-      },
-      {
-        enableHighAccuracy: true,
-        timeout: 10000,
-        maximumAge: 0,
-      },
-    );
   };
 
   const handleCreateRoom = async (event: React.FormEvent<HTMLFormElement>) => {
@@ -586,11 +99,24 @@ export default function ChatPage() {
     }
   };
 
+  const selectedRoom = rooms.find((room) => room.name === selectedRoomName);
+
+  // Filtrer les rooms en fonction de la recherche
+  const filteredRooms = useMemo(() => {
+    if (!searchQuery.trim()) {
+      return rooms;
+    }
+    const query = searchQuery.toLowerCase().trim();
+    return rooms.filter((room) =>
+      decodeURIComponent(room.name).toLowerCase().includes(query),
+    );
+  }, [rooms, searchQuery]);
+
   return (
     <div className="flex h-full bg-gray-50">
       <aside className="w-80 bg-white border-r border-gray-200 flex flex-col">
         <div className="p-4 border-b border-gray-200">
-          <div className="flex items-center justify-between">
+          <div className="flex items-center justify-between mb-3">
             <h2 className="text-xl font-semibold text-gray-800">
               Conversations
             </h2>
@@ -602,11 +128,18 @@ export default function ChatPage() {
               onSubmit={handleCreateRoom}
             />
           </div>
+          <Input
+            type="text"
+            placeholder="Rechercher une conversation..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full"
+          />
         </div>
 
         <div className="flex-1 overflow-y-auto">
           <RoomList
-            rooms={rooms}
+            rooms={filteredRooms}
             selectedRoomName={selectedRoomName}
             loading={loading}
             error={error}
@@ -668,5 +201,13 @@ export default function ChatPage() {
         />
       </main>
     </div>
+  );
+}
+
+export default function ChatPage() {
+  return (
+    <ProtectedRoute>
+      <ChatPageContent />
+    </ProtectedRoute>
   );
 }

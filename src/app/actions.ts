@@ -16,7 +16,10 @@ function initializeVapid() {
       process.env.VAPID_EMAIL || "mailto:leanecharpentierpro@outlook.com";
 
     if (!publicKey || !privateKey) {
-      console.warn("VAPID keys not found in environment variables");
+      // VAPID keys not configured - silent in production
+      if (process.env.NODE_ENV === "development") {
+        console.warn("VAPID keys not found in environment variables");
+      }
       return false;
     }
 
@@ -35,13 +38,12 @@ export async function subscribeUser(
       p256dh: string;
       auth: string;
     };
-  }
+  },
 ) {
   if (!initializeVapid()) {
     return { success: false, error: "VAPID not configured" };
   }
 
-  console.log(`Subscribing user ${userId}`, { endpoint: sub.endpoint });
   const subscription = {
     endpoint: sub.endpoint,
     expirationTime: sub.expirationTime,
@@ -51,7 +53,6 @@ export async function subscribeUser(
     },
   };
   subscriptions.set(userId, subscription);
-  console.log(`Total subscriptions: ${subscriptions.size}`);
   return { success: true };
 }
 
@@ -65,21 +66,15 @@ export async function sendNotification(userId: string, message: string) {
     return { success: false, error: "VAPID not configured" };
   }
 
-  console.log(`Attempting to send notification to user ${userId}`);
-  console.log(
-    `Available subscriptions: ${Array.from(subscriptions.keys()).join(", ")}`
-  );
-
   const subscription = subscriptions.get(userId);
   if (!subscription) {
-    console.error(`No subscription found for user ${userId}`);
-    console.error(
-      `Available users: [${Array.from(subscriptions.keys()).join(", ")}]`
-    );
+    if (process.env.NODE_ENV === "development") {
+      console.error(`No subscription found for user ${userId}`);
+    }
     return {
       success: false,
       error: `No subscription available for user ${userId}. Available users: [${Array.from(
-        subscriptions.keys()
+        subscriptions.keys(),
       ).join(", ")}]`,
     };
   }
@@ -91,11 +86,13 @@ export async function sendNotification(userId: string, message: string) {
         title: "Test Notification",
         body: message,
         icon: "/next.svg",
-      })
+      }),
     );
     return { success: true };
   } catch (error) {
-    console.error("Error sending push notification:", error);
+    if (process.env.NODE_ENV === "development") {
+      console.error("Error sending push notification:", error);
+    }
     return { success: false, error: "Failed to send notification" };
   }
 }
@@ -115,11 +112,13 @@ export async function sendNotificationToAll(message: string) {
           title: "Chat Notification",
           body: message,
           icon: "/next.svg",
-        })
+        }),
       );
       results.push({ userId, success: true });
     } catch (error) {
-      console.error(`Error sending push notification to ${userId}:`, error);
+      if (process.env.NODE_ENV === "development") {
+        console.error(`Error sending push notification to ${userId}:`, error);
+      }
       results.push({
         userId,
         success: false,
@@ -133,10 +132,6 @@ export async function sendNotificationToAll(message: string) {
 
 export async function getSubscriptions() {
   const activeSubscriptions = Array.from(subscriptions.keys());
-  console.log(
-    `Active subscriptions: ${activeSubscriptions.length}`,
-    activeSubscriptions
-  );
   return {
     count: activeSubscriptions.length,
     userIds: activeSubscriptions,

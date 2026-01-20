@@ -28,8 +28,6 @@ export default function Page() {
   const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
-    console.log("Form submitted");
-
     // Récupérer la valeur du username depuis le formulaire
     const formData = new FormData(event.currentTarget);
     const username = formData.get("username") as string;

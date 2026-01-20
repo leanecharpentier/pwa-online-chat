@@ -2,6 +2,7 @@
 
 import type { Message } from "@/types";
 import { useCallback, useEffect, useState } from "react";
+import { logger } from "@/lib/logger";
 
 const PENDING_MESSAGES_KEY = "pendingMessages";
 
@@ -24,10 +25,7 @@ export function useOffline() {
       const stored = globalThis.localStorage.getItem(PENDING_MESSAGES_KEY);
       return stored ? JSON.parse(stored) : [];
     } catch (error) {
-      console.error(
-        "Erreur lors de la lecture des messages en attente:",
-        error,
-      );
+      logger.error("Erreur lors de la lecture des messages en attente:", error);
       return [];
     }
   }, []);
@@ -41,7 +39,7 @@ export function useOffline() {
         JSON.stringify(messages),
       );
     } catch (error) {
-      console.error(
+      logger.error(
         "Erreur lors de la sauvegarde des messages en attente:",
         error,
       );
@@ -92,7 +90,7 @@ export function useOffline() {
     try {
       globalThis.localStorage.removeItem(PENDING_MESSAGES_KEY);
     } catch (error) {
-      console.error(
+      logger.error(
         "Erreur lors de la suppression des messages en attente:",
         error,
       );
@@ -102,12 +100,12 @@ export function useOffline() {
   // Écouter les changements d'état de connexion
   useEffect(() => {
     const handleOnline = () => {
-      console.log("✅ Connexion rétablie");
+      logger.info("Connexion rétablie");
       setIsOnline(true);
     };
 
     const handleOffline = () => {
-      console.log("❌ Connexion perdue");
+      logger.info("Connexion perdue");
       setIsOnline(false);
     };
 
