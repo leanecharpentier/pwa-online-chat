@@ -10,13 +10,14 @@ import ProtectedRoute from "@/components/ProtectedRoute";
 import { Input } from "@/components/ui/input";
 import { useAuth } from "@/contexts/AuthContext";
 import { useSocket } from "@/contexts/SocketContext";
-import { useOffline } from "@/hooks/useOffline";
-import { useRooms } from "@/hooks/useRooms";
-import { useMessages } from "@/hooks/useMessages";
-import { usePhotoCapture } from "@/hooks/usePhotoCapture";
 import { useDeviceFeatures } from "@/hooks/useDeviceFeatures";
+import { useMessages } from "@/hooks/useMessages";
+import { useNotifications } from "@/hooks/useNotifications";
+import { useOffline } from "@/hooks/useOffline";
+import { usePhotoCapture } from "@/hooks/usePhotoCapture";
+import { useRooms } from "@/hooks/useRooms";
 import type { Message } from "@/types";
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 function ChatPageContent() {
   const [selectedRoomName, setSelectedRoomName] = useState<string>("");
@@ -33,6 +34,7 @@ function ChatPageContent() {
   const { user } = useAuth();
   const { rooms, loading, error, fetchRooms } = useRooms();
   const { isOnline, addPendingMessage } = useOffline();
+  const { requestPermission } = useNotifications();
 
   const { messages, addMessage, clearMessages } = useMessages({
     selectedRoomName,
@@ -50,6 +52,16 @@ function ChatPageContent() {
     isOnline,
     onMessageAdded: addMessage,
   });
+
+  // Demander la permission de notification au démarrage
+  useEffect(() => {
+    // Attendre un peu avant de demander la permission pour une meilleure UX
+    const timer = setTimeout(() => {
+      requestPermission();
+    }, 2000);
+
+    return () => clearTimeout(timer);
+  }, [requestPermission]);
 
   // Sélectionner automatiquement la première salle
   useEffect(() => {

@@ -9,6 +9,8 @@ import {
   extractBase64FromDataUrl,
 } from "@/lib/imageUtils";
 import { useAuth } from "@/contexts/AuthContext";
+import { useNotifications } from "./useNotifications";
+import { useNotificationSettings } from "./useNotificationSettings";
 
 interface UseMessagesOptions {
   selectedRoomName: string;
@@ -28,6 +30,8 @@ export function useMessages({
     removePendingMessage,
     markMessageAsSent,
   } = useOffline();
+  const { sendNotification, permission } = useNotifications();
+  const { isRoomNotificationEnabled } = useNotificationSettings();
 
   const createMessageKey = useCallback(
     (message: Message) =>
@@ -124,7 +128,37 @@ export function useMessages({
     if (!socket.socket) return;
 
     const handleNewMessage = async (data: Message) => {
+      // Vérifier si c'est un message de l'utilisateur actuel
+      const isOwnMessage =
+        data.pseudo === user?.username || data.userId === socket.socket?.id;
+
+      // Si le message n'est pas de la room sélectionnée, vérifier si on doit envoyer une notification
       if (data.roomName !== selectedRoomName) {
+        // Envoyer une notification si :
+        // 1. Les notifications sont activées pour cette room
+        // 2. Ce n'est pas un message de l'utilisateur actuel
+        // 3. Ce n'est pas un message du serveur
+        // 4. La permission de notification est accordée
+        if (
+          !isOwnMessage &&
+          data.pseudo !== "SERVER" &&
+          permission === "granted" &&
+          isRoomNotificationEnabled(data.roomName)
+        ) {
+          logger.info("Envoi de notification pour:", {
+            room: data.roomName,
+            pseudo: data.pseudo,
+            content: data.content?.substring(0, 50),
+          });
+          sendNotification(data, data.roomName);
+        } else {
+          logger.debug("Notification non envoyée:", {
+            isOwnMessage,
+            pseudo: data.pseudo,
+            permission,
+            enabled: isRoomNotificationEnabled(data.roomName),
+          });
+        }
         return;
       }
 
@@ -146,8 +180,6 @@ export function useMessages({
         // Pour les images, on compare aussi par imageUrl car le contenu peut être différent (base64 vs data URL)
         const isImageMessage =
           data.categorie === "NEW_IMAGE" || isImageContent(data.content || "");
-        const isOwnMessage =
-          data.pseudo === user?.username || data.userId === socket.socket?.id;
 
         const matchingPending = prevMessages.find((msg) => {
           if (!msg.isPending || !msg.tempId) return false;
@@ -244,8 +276,22 @@ export function useMessages({
       });
     };
 
-    socket.getMessages(handleNewMessage);
-  }, [socket, selectedRoomName, isMessageDuplicate, removePendingMessage]);
+    const cleanup = socket.getMessages(handleNewMessage);
+    
+    // Nettoyer le listener quand le composant se démonte ou les dépendances changent
+    return () => {
+      if (cleanup) cleanup();
+    };
+  }, [
+    socket,
+    selectedRoomName,
+    isMessageDuplicate,
+    removePendingMessage,
+    user?.username,
+    permission,
+    isRoomNotificationEnabled,
+    sendNotification,
+  ]);
 
   const addMessage = useCallback((message: Message) => {
     setMessages((prevMessages) => [...prevMessages, message]);

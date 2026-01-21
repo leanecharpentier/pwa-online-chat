@@ -1,5 +1,6 @@
 "use client";
 
+import { logger } from "@/lib/logger";
 import type { Message } from "@/types";
 import {
   createContext,
@@ -11,7 +12,6 @@ import {
 } from "react";
 import { io, Socket } from "socket.io-client";
 import { useAuth } from "./AuthContext";
-import { logger } from "@/lib/logger";
 
 interface SocketContextType {
   socket: Socket | null;
@@ -19,7 +19,7 @@ interface SocketContextType {
   joinRoom: (roomName: string) => void;
   sendMessage: (message: string) => void;
   sendImage: (imageData: string, imageId: string) => void;
-  getMessages: (callback: (data: Message) => void) => void;
+  getMessages: (callback: (data: Message) => void) => (() => void) | undefined;
 }
 
 const SocketContext = createContext<SocketContextType | null>(null);
@@ -91,10 +91,16 @@ export const SocketProvider = ({ children }: { children: React.ReactNode }) => {
   const getMessages = useCallback(
     (callback: (data: Message) => void) => {
       if (socket) {
-        socket.on("chat-msg", (data: Message) => {
+        const handler = (data: Message) => {
           callback(data);
-        });
+        };
+        socket.on("chat-msg", handler);
+        // Retourner une fonction de nettoyage
+        return () => {
+          socket.off("chat-msg", handler);
+        };
       }
+      return () => {};
     },
     [socket],
   );
