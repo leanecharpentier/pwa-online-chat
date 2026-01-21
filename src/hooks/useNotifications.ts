@@ -65,13 +65,13 @@ export function useNotifications() {
         const title = roomName
           ? `${decodeURIComponent(roomName)}`
           : "Nouveau message";
-        
+
         // Formater le corps de la notification
         let body = "";
         if (message.pseudo && message.pseudo !== "SERVER") {
           body = `${message.pseudo}: `;
         }
-        
+
         // Gérer les messages avec images
         if (message.imageUrl || message.categorie === "NEW_IMAGE") {
           body += "📷 Image";
@@ -86,7 +86,7 @@ export function useNotifications() {
         // Créer un tag unique pour chaque notification
         // Utiliser un timestamp avec un random pour éviter les collisions
         const uniqueTag = `message-${message.roomName}-${message.id || `${Date.now()}-${Math.random()}`}`;
-        
+
         const notification = new Notification(title, {
           body,
           icon: "/next.svg",
@@ -94,7 +94,7 @@ export function useNotifications() {
           tag: uniqueTag,
           requireInteraction: false,
         });
-        
+
         logger.info("Notification envoyée:", { title, body, tag: uniqueTag });
 
         // Fermer automatiquement la notification après 5 secondes
@@ -121,4 +121,3 @@ export function useNotifications() {
     sendNotification,
   };
 }
-

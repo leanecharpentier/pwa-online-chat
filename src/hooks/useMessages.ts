@@ -277,7 +277,7 @@ export function useMessages({
     };
 
     const cleanup = socket.getMessages(handleNewMessage);
-    
+
     // Nettoyer le listener quand le composant se démonte ou les dépendances changent
     return () => {
       if (cleanup) cleanup();
