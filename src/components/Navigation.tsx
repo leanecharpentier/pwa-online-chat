@@ -23,7 +23,6 @@ export default function Navigation() {
         <div className="flex items-center gap-4">
           <Link href="/chat">Chat</Link>
           <Link href="/gallery">Gallery</Link>
-          <Link href="/room">Room</Link>
           <Button variant="outline" size="sm" onClick={handleLogout}>
             Déconnexion
           </Button>
